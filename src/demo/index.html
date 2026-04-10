@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generative Market Simulation</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --accent: #C87533;
+            --accent-light: #E8A460;
+            --bg: #FAFAFA;
+            --card-bg: #FFFFFF;
+            --text: #1A1A1A;
+            --text-muted: #666666;
+            --border: #E0E0E0;
+            --crisis: #D32F2F;
+            --calm: #388E3C;
+            --normal: #455A64;
+            --pass-bg: #C8E6C9;
+            --fail-bg: #FFCDD2;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .header {
+            background: var(--text);
+            color: white;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .header .subtitle { font-size: 13px; color: #999; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--border);
+            padding: 0 32px;
+            background: white;
+        }
+
+        .tab {
+            padding: 14px 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab:hover { color: var(--accent); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .tab-content { display: none; padding: 24px 32px; }
+        .tab-content.active { display: block; }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-group { display: flex; gap: 4px; }
+
+        .btn {
+            padding: 8px 20px;
+            border: 2px solid var(--border);
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s;
+        }
+
+        .btn:hover { border-color: var(--accent); }
+
+        .btn.active-crisis { background: var(--crisis); color: white; border-color: var(--crisis); }
+        .btn.active-calm { background: var(--calm); color: white; border-color: var(--calm); }
+        .btn.active-normal { background: var(--normal); color: white; border-color: var(--normal); }
+        .btn.active-default { background: var(--accent); color: white; border-color: var(--accent); }
+
+        .btn-generate {
+            padding: 8px 28px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.15s;
+        }
+
+        .btn-generate:hover { background: var(--accent-light); }
+        .btn-generate:disabled { background: #CCC; cursor: not-allowed; }
+
+        /* Charts grid */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .chart-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .chart-card h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 320px;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 4px;
+        }
+
+        .stat-card .value.accent { color: var(--accent); }
+        .stat-card .value.crisis { color: var(--crisis); }
+
+        /* Comparison tab */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .comparison-table th {
+            background: var(--text);
+            color: white;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .comparison-table td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .comparison-table tr:hover td { background: #F5F5F5; }
+
+        .sf-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .sf-pass { background: var(--pass-bg); color: #2E7D32; }
+        .sf-fail { background: var(--fail-bg); color: #C62828; }
+
+        /* Validation tab */
+        .sf-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .sf-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .sf-card h4 { font-size: 14px; margin-bottom: 8px; }
+        .sf-card .detail { font-size: 12px; color: var(--text-muted); }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        select {
+            padding: 8px 12px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Generative Market Simulation</h1>
+    <span class="subtitle">EECS 4904 — Spring 2026</span>
+</div>
+
+<div class="tabs">
+    <div class="tab active" data-tab="simulation">Simulation</div>
+    <div class="tab" data-tab="comparison">Model Comparison</div>
+    <div class="tab" data-tab="validation">Validation</div>
+</div>
+
+<!-- ================================================================== -->
+<!-- SIMULATION TAB -->
+<!-- ================================================================== -->
+<div id="simulation" class="tab-content active">
+    <div class="controls">
+        <div class="control-group">
+            <label>Regime:</label>
+            <div class="btn-group" id="regime-btns">
+                <button class="btn active-crisis" data-regime="crisis">Crisis</button>
+                <button class="btn" data-regime="calm">Calm</button>
+                <button class="btn" data-regime="normal">Normal</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Paths:</label>
+            <div class="btn-group" id="paths-btns">
+                <button class="btn" data-paths="20">20</button>
+                <button class="btn active-default" data-paths="50">50</button>
+                <button class="btn" data-paths="200">200</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Model:</label>
+            <select id="model-select">
+                <option value="ddpm">DDPM</option>
+                <option value="garch">GARCH</option>
+                <option value="vae">VAE</option>
+                <option value="timegan">TimeGAN</option>
+                <option value="flow">NormFlow</option>
+            </select>
+        </div>
+
+        <button class="btn-generate" id="generate-btn">Generate</button>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h3 id="paths-title">50 SYNTHETIC 1-YEAR PATHS — CRISIS REGIME</h3>
+            <div class="chart-container">
+                <canvas id="paths-chart"></canvas>
+            </div>
+        </div>
+        <div class="chart-card">
+            <h3>TERMINAL PRICE DISTRIBUTION</h3>
+            <div class="chart-container">
+                <canvas id="terminal-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="label">Mean Terminal</div>
+            <div class="value accent" id="stat-mean">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">5% VaR</div>
+            <div class="value crisis" id="stat-var">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Paths Generated</div>
+            <div class="value" id="stat-paths">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Sequence Length</div>
+            <div class="value" id="stat-seqlen">—</div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- COMPARISON TAB -->
+<!-- ================================================================== -->
+<div id="comparison" class="tab-content">
+    <div class="controls">
+        <button class="btn-generate" id="compare-btn">Run Comparison</button>
+    </div>
+    <div id="comparison-content">
+        <p class="loading">Click "Run Comparison" to evaluate all models.</p>
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- VALIDATION TAB -->
+<!-- ================================================================== -->
+<div id="validation" class="tab-content">
+    <div class="controls">
+        <div class="control-group">
+            <label>Model:</label>
+            <select id="val-model-select">
+                <option value="ddpm">DDPM</option>
+                <option value="garch">GARCH</option>
+                <option value="vae">VAE</option>
+                <option value="timegan">TimeGAN</option>
+                <option value="flow">NormFlow</option>
+            </select>
+        </div>
+        <button class="btn-generate" id="validate-btn">Run Tests</button>
+    </div>
+    <div id="validation-content">
+        <p class="loading">Select a model and click "Run Tests".</p>
+    </div>
+</div>
+
+<script>
+const API = '';
+
+// ---- State ----
+let currentRegime = 'crisis';
+let currentPaths = 50;
+let pathsChart = null;
+let terminalChart = null;
+
+// ---- Tab switching ----
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+});
+
+// ---- Regime buttons ----
+document.querySelectorAll('#regime-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#regime-btns .btn').forEach(b => {
+            b.className = 'btn';
+        });
+        currentRegime = btn.dataset.regime;
+        const classMap = { crisis: 'active-crisis', calm: 'active-calm', normal: 'active-normal' };
+        btn.classList.add(classMap[currentRegime]);
+    });
+});
+
+// ---- Paths buttons ----
+document.querySelectorAll('#paths-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#paths-btns .btn').forEach(b => b.className = 'btn');
+        currentPaths = parseInt(btn.dataset.paths);
+        btn.classList.add('active-default');
+    });
+});
+
+// ---- Generate ----
+document.getElementById('generate-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('generate-btn');
+    const model = document.getElementById('model-select').value;
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    try {
+        const resp = await fetch(API + '/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                regime: currentRegime,
+                n_paths: currentPaths,
+                model: model,
+                asset_idx: 0
+            })
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('Error: ' + (err.detail || 'Generation failed'));
+            return;
+        }
+
+        const data = await resp.json();
+        renderSimulation(data);
+    } catch (e) {
+        alert('Server error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+    }
+});
+
+function renderSimulation(data) {
+    // Update title
+    const title = `${data.n_paths} SYNTHETIC 1-YEAR PATHS — ${data.regime.toUpperCase()} REGIME`;
+    document.getElementById('paths-title').textContent = title;
+
+    // Update stats
+    document.getElementById('stat-mean').textContent = '$' + data.mean_terminal;
+    document.getElementById('stat-var').textContent = '$' + data.var_5;
+    document.getElementById('stat-paths').textContent = data.n_paths;
+    document.getElementById('stat-seqlen').textContent = data.seq_len;
+
+    // -- Paths chart --
+    if (pathsChart) pathsChart.destroy();
+
+    const labels = Array.from({ length: data.seq_len }, (_, i) => i);
+    const datasets = data.prices.map((path, i) => ({
+        data: path,
+        borderColor: 'rgba(200, 117, 51, 0.3)',
+        borderWidth: 0.8,
+        pointRadius: 0,
+        fill: false,
+    }));
+
+    pathsChart = new Chart(document.getElementById('paths-chart'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Trading Day' },
+                    ticks: { maxTicksLimit: 10 }
+                },
+                y: {
+                    title: { display: true, text: 'Price (start=$100)' }
+                }
+            }
+        }
+    });
+
+    // -- Terminal distribution --
+    if (terminalChart) terminalChart.destroy();
+
+    const terminal = data.terminal;
+    const min_val = Math.floor(Math.min(...terminal));
+    const max_val = Math.ceil(Math.max(...terminal));
+    const n_bins = 30;
+    const bin_width = (max_val - min_val) / n_bins || 1;
+    const bins = Array.from({ length: n_bins }, (_, i) => min_val + i * bin_width);
+    const counts = new Array(n_bins).fill(0);
+    terminal.forEach(v => {
+        let idx = Math.floor((v - min_val) / bin_width);
+        if (idx >= n_bins) idx = n_bins - 1;
+        if (idx < 0) idx = 0;
+        counts[idx]++;
+    });
+
+    const var5 = data.var_5;
+    const barColors = bins.map(b => (b + bin_width / 2) < var5 ? '#D32F2F' : '#FF9800');
+
+    terminalChart = new Chart(document.getElementById('terminal-chart'), {
+        type: 'bar',
+        data: {
+            labels: bins.map(b => '$' + Math.round(b)),
+            datasets: [{
+                data: counts,
+                backgroundColor: barColors,
+                borderWidth: 0,
+                barPercentage: 1.0,
+                categoryPercentage: 0.95,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Terminal Price' },
+                    ticks: { maxTicksLimit: 8 }
+                },
+                y: {
+                    title: { display: true, text: 'Count' }
+                }
+            }
+        }
+    });
+}
+
+// ---- Comparison ----
+document.getElementById('compare-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('compare-btn');
+    const content = document.getElementById('comparison-content');
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    content.innerHTML = '<p class="loading"><span class="spinner"></span> Evaluating all models...</p>';
+
+    try {
+        const resp = await fetch(API + '/api/comparison');
+        if (!resp.ok) throw new Error('Comparison failed');
+        const data = await resp.json();
+        renderComparison(data);
+    } catch (e) {
+        content.innerHTML = '<p class="loading">Error: ' + e.message + '</p>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Comparison';
+    }
+});
+
+function renderComparison(data) {
+    const models = Object.keys(data);
+    let html = '<table class="comparison-table"><thead><tr>';
+    html += '<th>Model</th><th>MMD</th><th>Wasserstein</th><th>KS Stat</th>';
+    html += '<th>Disc. Score</th><th>Corr. Dist.</th><th>SF Passed</th>';
+    html += '</tr></thead><tbody>';
+
+    models.forEach(m => {
+        const info = data[m];
+        if (info.error) {
+            html += `<tr><td>${m}</td><td colspan="6">${info.error}</td></tr>`;
+            return;
+        }
+        const sfClass = info.n_pass >= 4 ? 'sf-pass' : 'sf-fail';
+        html += `<tr>
+            <td><strong>${m.toUpperCase()}</strong></td>
+            <td>${(info.mmd || 0).toFixed(4)}</td>
+            <td>${(info.wasserstein_1d || 0).toFixed(4)}</td>
+            <td>${(info.ks_stat || 0).toFixed(4)}</td>
+            <td>${(info.discriminative_score || 0).toFixed(2)}</td>
+            <td>${(info.correlation_matrix_distance || 0).toFixed(2)}</td>
+            <td><span class="sf-badge ${sfClass}">${info.n_pass}/6</span></td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('comparison-content').innerHTML = html;
+}
+
+// ---- Validation ----
+document.getElementById('validate-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('validate-btn');
+    const model = document.getElementById('val-model-select').value;
+    const content = document.getElementById('validation-content');
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    content.innerHTML = '<p class="loading"><span class="spinner"></span> Running stylized fact tests...</p>';
+
+    try {
+        const resp = await fetch(API + '/api/stylized-facts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, n_samples: 500 })
+        });
+        if (!resp.ok) throw new Error('Validation failed');
+        const data = await resp.json();
+        renderValidation(data);
+    } catch (e) {
+        content.innerHTML = '<p class="loading">Error: ' + e.message + '</p>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Tests';
+    }
+});
+
+function renderValidation(data) {
+    let html = `<h3 style="margin-bottom:16px">${data.model.toUpperCase()} — ${data.n_pass}/${data.n_total} tests passed</h3>`;
+    html += '<div class="sf-grid">';
+
+    data.results.forEach(r => {
+        const status = r.pass ? 'PASS' : 'FAIL';
+        const badge = r.pass ? 'sf-pass' : 'sf-fail';
+        let details = '';
+        for (const [k, v] of Object.entries(r)) {
+            if (['name', 'pass', 'acf_values'].includes(k)) continue;
+            details += `<div class="detail"><strong>${k}:</strong> ${v}</div>`;
+        }
+        html += `<div class="sf-card">
+            <h4><span class="sf-badge ${badge}">${status}</span> ${r.name}</h4>
+            ${details}
+        </div>`;
+    });
+
+    html += '</div>';
+    document.getElementById('validation-content').innerHTML = html;
+}
+
+// ---- On load: fetch available models ----
+(async () => {
+    try {
+        const resp = await fetch(API + '/api/models');
+        const data = await resp.json();
+        const selects = ['model-select', 'val-model-select'];
+        selects.forEach(id => {
+            const sel = document.getElementById(id);
+            sel.innerHTML = '';
+            data.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m.toUpperCase();
+                sel.appendChild(opt);
+            });
+        });
+    } catch (e) {
+        // Server may not be running yet
+    }
+})();
+</script>
+
+</body>
+</html>
