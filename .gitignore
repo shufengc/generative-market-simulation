@@ -1,0 +1,40 @@
+# Data and model artifacts (regenerable via pipeline)
+/data/
+/checkpoints/
+*.npy
+*.pt
+*.npz
+
+# Large media
+*.mp4
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE and OS
+.DS_Store
+.vscode/
+.idea/
+.cursor/
+
+# Environment
+.env
+*.env
+
+# Project-specific exclusions
+/proposal/
+/references/
+/perplexity_search.md
+/docs/
+/proposal.zip
+/Project_video.mp4
