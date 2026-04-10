@@ -171,8 +171,8 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 | Shufeng Chen | Lead, DDPM, Integration, Demo |
 | Yixuan Ye | TimeGAN, Evaluation Framework |
 | Yizheng Lin | VAE, Data Pipeline |
-| Yihang Sun | GARCH Baseline, Visualization |
-| Mr. Meng | Normalizing Flow, Proposal |
+| Kevin Sun | GARCH Baseline, Visualization |
+| Yuxia Meng | Normalizing Flow, Proposal |
 
 ## References
 
