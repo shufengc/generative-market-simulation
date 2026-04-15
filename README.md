@@ -29,7 +29,7 @@ Every generated dataset is validated against six well-documented empirical regul
 
 | Model | Type | Key Idea |
 |-------|------|----------|
-| **DDPM** | Diffusion | 1-D U-Net denoiser with DDIM sampling, EMA, and classifier-free guidance for conditional regime generation |
+| **DDPM** | Diffusion | 1-D U-Net denoiser with v-prediction, sigmoid schedule, DDIM sampling, EMA, and classifier-free guidance |
 | **TimeGAN** | GAN | Embedding + supervisor + adversarial training for temporal latent dynamics |
 | **VAE** | Variational | GRU encoder-decoder with KL annealing |
 | **GARCH** | Statistical | Per-asset GARCH(1,1) with correlated Student-t innovations |
@@ -67,34 +67,63 @@ Yahoo Finance + FRED API
 
 ## Results
 
-Training on 15 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows.
+Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows, 400 epochs.
 
-| Model | Stylized Facts | MMD | Discriminative Score |
-|-------|:--------------:|:---:|:--------------------:|
-| **DDPM** | 4 / 6 | 0.276 | 0.98 |
-| GARCH | 4 / 6 | 0.416 | 1.00 |
-| VAE | 1 / 6 | 0.403 | 1.00 |
-| TimeGAN | 2 / 6 | 0.074 | 0.79 |
-| **NormFlow** | **5 / 6** | **0.001** | **0.72** |
+| Model | Stylized Facts | MMD | Wasserstein-1 | Discriminative Score |
+|-------|:--------------:|:---:|:-------------:|:--------------------:|
+| **DDPM (Improved)** | 3 / 6 | 0.020 | 0.176 | **0.66** |
+| **NormFlow** | **5 / 6** | **0.011** | **0.101** | 0.74 |
 
-*Discriminative score: accuracy of a classifier distinguishing real from synthetic (0.5 = indistinguishable).*
+*Discriminative score: accuracy of a classifier distinguishing real from synthetic (0.5 = indistinguishable). DDPM achieves the best discriminative score.*
 
-### Stylized Facts Heatmap
+The improved DDPM uses v-prediction parameterization and a sigmoid noise schedule, yielding a 93% improvement in MMD (0.020 vs 0.276) and 32% improvement in discriminative score (0.66 vs 0.98) over the baseline DDPM. Full ablation study results are in `experiments/results/`.
+
+### DDPM Ablation Study
+
+Seven DDPM variants were tested across 3 random seeds. See `experiments/results/ANALYSIS.md` for the full report.
 
 <p align="center">
-  <img src="results/stylized_facts_heatmap.png" width="700" alt="Stylized facts pass/fail across models">
+  <img src="experiments/results/fig_radar_chart.png" width="700" alt="Radar chart of normalized metrics across DDPM variants">
+</p>
+
+<p align="center">
+  <img src="experiments/results/fig_stylized_facts_heatmap.png" width="700" alt="Stylized facts pass/fail across DDPM variants">
 </p>
 
 ### Return Distribution Comparison
 
 <p align="center">
-  <img src="results/distributions.png" width="700" alt="Return distributions: real vs synthetic">
+  <img src="experiments/results/fig_distributions_h2h.png" width="700" alt="Return distributions: real vs DDPM vs NormFlow">
+</p>
+
+### QQ-Plot Comparison
+
+<p align="center">
+  <img src="experiments/results/fig_qq_h2h.png" width="700" alt="QQ-plots: real vs synthetic">
+</p>
+
+### Autocorrelation of |Returns|
+
+<p align="center">
+  <img src="experiments/results/fig_acf_h2h.png" width="700" alt="ACF of absolute returns">
+</p>
+
+### Synthetic Price Paths
+
+<p align="center">
+  <img src="experiments/results/fig_paths_ddpm_final.png" width="700" alt="DDPM synthetic paths">
+</p>
+
+### Correlation Matrix: Real vs Synthetic
+
+<p align="center">
+  <img src="experiments/results/fig_corr_ddpm.png" width="700" alt="Correlation matrices: real vs DDPM">
 </p>
 
 ### Training Loss Curves
 
 <p align="center">
-  <img src="results/training_losses.png" width="600" alt="Training loss curves">
+  <img src="experiments/results/fig_training_losses.png" width="600" alt="Training loss curves">
 </p>
 
 ## Data Sources
@@ -124,10 +153,11 @@ PYTHONPATH=. python3 -m src.demo.app
 The DDPM supports regime-conditioned generation (crisis, calm, normal) via classifier-free guidance:
 
 ```python
-from src.models.ddpm import DDPMModel
+from src.models.ddpm_improved import ImprovedDDPM
 from src.data.regime_labels import get_regime_conditioning_vectors
 
-model = DDPMModel(n_features=15, seq_len=60, cond_dim=5, device="mps")
+model = ImprovedDDPM(n_features=16, seq_len=60, cond_dim=5, device="mps",
+                     use_vpred=True, use_sigmoid_schedule=True)
 model.load("checkpoints/ddpm.pt")
 
 crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["crisis"])
@@ -143,7 +173,8 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 │   │   └── regime_labels.py     # Crisis/calm/normal regime classification
 │   ├── models/
 │   │   ├── base_model.py        # Abstract interface for all models
-│   │   ├── ddpm.py              # DDPM with EMA, DDIM, classifier-free guidance
+│   │   ├── ddpm.py              # DDPM baseline
+│   │   ├── ddpm_improved.py     # DDPM with v-prediction, sigmoid schedule, self-conditioning
 │   │   ├── garch.py             # GARCH(1,1) with correlated innovations
 │   │   ├── vae.py               # GRU VAE with KL annealing
 │   │   ├── gan.py               # TimeGAN with gradient penalty
@@ -158,9 +189,12 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 │   ├── utils/
 │   │   └── config.py            # Central configuration
 │   └── run_pipeline.py          # End-to-end orchestration
+├── experiments/
+│   ├── run_ddpm_ablation.py     # Ablation study: 7 variants x 3 seeds
+│   ├── report_ddpm.py           # 3-level evaluation report generator
+│   └── results/                 # Figures, tables, raw JSON results
 ├── notebooks/
 │   └── demo.ipynb               # Jupyter demo notebook
-├── results/                     # Generated comparison plots
 └── requirements.txt
 ```
 
