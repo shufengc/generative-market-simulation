@@ -1,5 +1,0 @@
-,GARCH,VAE,TimeGAN,NormFlow
-GARCH,1.0,0.0,0.0,0.0
-VAE,0.0,1.0,0.0,0.0
-TimeGAN,0.0,0.0,1.0,0.5
-NormFlow,0.0,0.0,0.5,1.0
