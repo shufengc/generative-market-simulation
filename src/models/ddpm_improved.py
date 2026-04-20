@@ -4,11 +4,17 @@ Improved DDPM for financial time series -- ablation-ready.
 All improvements are toggled via constructor flags so a single class
 can instantiate the baseline or any combination of improvements:
 
+  Phase 1:
   1. use_dit         -- Transformer denoiser instead of UNet
   2. use_vpred       -- v-prediction instead of epsilon-prediction
   3. use_self_cond   -- self-conditioning (feed x0 estimate back)
   4. use_sigmoid_schedule -- sigmoid noise schedule
   5. use_cross_attn  -- cross-attention conditioning instead of additive
+
+  Phase 2:
+  6. use_temporal_attn   -- multi-head self-attention after each ResBlock
+  7. use_hetero_noise    -- heteroskedastic (volatility-scaled) noise injection
+  8. use_aux_sf_loss     -- auxiliary stylized-fact losses (kurtosis + ACF)
 """
 
 from __future__ import annotations
@@ -122,11 +128,35 @@ class ResBlock1D(nn.Module):
         return h + self.skip(x)
 
 
+class TemporalAttention1D(nn.Module):
+    """Self-attention over the temporal dimension for 1D sequences.
+
+    Expects input shape (B, C, L), transposes to (B, L, C) for attention,
+    then transposes back. Gives every timestep a global receptive field.
+    """
+
+    def __init__(self, channels: int, n_heads: int = 4):
+        super().__init__()
+        self.norm = nn.GroupNorm(min(8, channels), channels)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=channels, num_heads=n_heads, batch_first=True,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        h = self.norm(x)
+        h = h.permute(0, 2, 1)  # (B, L, C)
+        h, _ = self.attn(h, h, h)
+        h = h.permute(0, 2, 1)  # (B, C, L)
+        return residual + h
+
+
 class UNet1D(nn.Module):
     def __init__(self, in_channels: int, base_channels: int = 64,
                  channel_mults: tuple = (1, 2, 4), time_dim: int = 128,
                  cond_dim: int = 0, use_cross_attn: bool = False,
-                 out_channels: int | None = None):
+                 out_channels: int | None = None,
+                 use_temporal_attn: bool = False):
         super().__init__()
         self.use_cross_attn = use_cross_attn
         self.out_channels = out_channels or in_channels
@@ -154,24 +184,37 @@ class UNet1D(nn.Module):
         self.init_conv = nn.Conv1d(in_channels, base_channels, 1)
         self.down_blocks = nn.ModuleList()
         self.down_pools = nn.ModuleList()
+        self.down_attns = nn.ModuleList()
         ch = base_channels
         channels = [ch]
         for mult in channel_mults:
             out_ch = base_channels * mult
             self.down_blocks.append(ResBlock1D(ch, out_ch, time_dim))
+            self.down_attns.append(
+                TemporalAttention1D(out_ch) if use_temporal_attn
+                else nn.Identity()
+            )
             self.down_pools.append(nn.Conv1d(out_ch, out_ch, 2, stride=2, padding=0))
             ch = out_ch
             channels.append(ch)
 
         self.mid = ResBlock1D(ch, ch, time_dim)
+        self.mid_attn = (
+            TemporalAttention1D(ch) if use_temporal_attn else nn.Identity()
+        )
 
         self.up_blocks = nn.ModuleList()
         self.up_samples = nn.ModuleList()
+        self.up_attns = nn.ModuleList()
         for mult in reversed(channel_mults):
             out_ch = base_channels * mult
             self.up_samples.append(nn.ConvTranspose1d(ch, out_ch, 2, stride=2))
             skip_ch = channels.pop()
             self.up_blocks.append(ResBlock1D(out_ch + skip_ch, out_ch, time_dim))
+            self.up_attns.append(
+                TemporalAttention1D(out_ch) if use_temporal_attn
+                else nn.Identity()
+            )
             ch = out_ch
 
         self.final_conv = nn.Sequential(
@@ -193,17 +236,22 @@ class UNet1D(nn.Module):
 
         x = self.init_conv(x)
         skips = [x]
-        for block, pool in zip(self.down_blocks, self.down_pools):
+        for block, attn, pool in zip(self.down_blocks, self.down_attns,
+                                     self.down_pools):
             x = block(x, t_emb)
+            x = attn(x)
             skips.append(x)
             x = pool(x)
         x = self.mid(x, t_emb)
-        for up_sample, block in zip(self.up_samples, self.up_blocks):
+        x = self.mid_attn(x)
+        for up_sample, block, attn in zip(self.up_samples, self.up_blocks,
+                                          self.up_attns):
             x = up_sample(x)
             skip = skips.pop()
             min_len = min(x.shape[-1], skip.shape[-1])
             x = torch.cat([x[..., :min_len], skip[..., :min_len]], dim=1)
             x = block(x, t_emb)
+            x = attn(x)
         return self.final_conv(x)
 
 
@@ -333,12 +381,13 @@ class ImprovedDDPM(BaseGenerativeModel):
     """
     DDPM with configurable improvements for ablation study.
 
-    Flags:
-        use_dit: Use DiT instead of UNet
-        use_vpred: v-prediction instead of epsilon-prediction
-        use_self_cond: self-conditioning
-        use_sigmoid_schedule: sigmoid noise schedule
-        use_cross_attn: cross-attention conditioning
+    Phase 1 flags:
+        use_dit, use_vpred, use_self_cond, use_sigmoid_schedule, use_cross_attn
+
+    Phase 2 flags:
+        use_temporal_attn: multi-head self-attention after each ResBlock
+        use_hetero_noise: volatility-scaled (heteroskedastic) noise injection
+        use_aux_sf_loss: auxiliary kurtosis + ACF matching losses
     """
 
     def __init__(
@@ -351,12 +400,18 @@ class ImprovedDDPM(BaseGenerativeModel):
         cond_dim: int = 0,
         cfg_drop_prob: float = 0.1,
         device: str = "cpu",
-        # Improvement flags
+        # Phase 1 flags
         use_dit: bool = False,
         use_vpred: bool = False,
         use_self_cond: bool = False,
         use_sigmoid_schedule: bool = False,
         use_cross_attn: bool = False,
+        # Phase 2 flags
+        use_temporal_attn: bool = False,
+        use_hetero_noise: bool = False,
+        use_aux_sf_loss: bool = False,
+        hetero_noise_k: int = 5,
+        aux_sf_weight: float = 0.1,
         # DiT-specific
         dit_d_model: int = 256,
         dit_n_heads: int = 8,
@@ -374,6 +429,12 @@ class ImprovedDDPM(BaseGenerativeModel):
             parts.append("sigmoid")
         if use_cross_attn:
             parts.append("xattn")
+        if use_temporal_attn:
+            parts.append("tempattn")
+        if use_hetero_noise:
+            parts.append("hetero")
+        if use_aux_sf_loss:
+            parts.append("auxsf")
         if parts:
             tag += "-" + "+".join(parts)
 
@@ -388,8 +449,12 @@ class ImprovedDDPM(BaseGenerativeModel):
         self.use_self_cond = use_self_cond
         self.use_sigmoid_schedule = use_sigmoid_schedule
         self.use_cross_attn = use_cross_attn
+        self.use_temporal_attn = use_temporal_attn
+        self.use_hetero_noise = use_hetero_noise
+        self.use_aux_sf_loss = use_aux_sf_loss
+        self.hetero_noise_k = hetero_noise_k
+        self.aux_sf_weight = aux_sf_weight
 
-        # Noise schedule
         if use_sigmoid_schedule:
             betas = sigmoid_beta_schedule(T)
         else:
@@ -400,15 +465,15 @@ class ImprovedDDPM(BaseGenerativeModel):
 
         self.register_schedule(betas, alphas, alpha_bar)
 
-        # Pad seq_len for UNet
         n_pools = len(channel_mults)
         padded_len = seq_len
         while padded_len % (2 ** n_pools) != 0:
             padded_len += 1
         self.padded_len = padded_len
 
-        # Extra input channels for self-conditioning
         in_ch = n_features * 2 if use_self_cond else n_features
+        if use_hetero_noise:
+            in_ch += n_features
 
         out_ch = n_features
 
@@ -431,9 +496,11 @@ class ImprovedDDPM(BaseGenerativeModel):
                 cond_dim=cond_dim,
                 use_cross_attn=use_cross_attn,
                 out_channels=out_ch,
+                use_temporal_attn=use_temporal_attn,
             ).to(self.device)
 
         self.ema: EMA | None = None
+        self._train_step_counter = 0
 
     def register_schedule(self, betas, alphas, alpha_bar):
         self.betas = betas.to(self.device)
@@ -450,12 +517,27 @@ class ImprovedDDPM(BaseGenerativeModel):
         out = tensor.gather(-1, t)
         return out.reshape(-1, *([1] * (len(shape) - 1)))
 
+    def _compute_local_vol(self, x0: torch.Tensor) -> torch.Tensor:
+        """Compute local volatility from squared returns: (B, C, L)."""
+        k = self.hetero_noise_k
+        sq = x0 ** 2
+        kernel = torch.ones(1, 1, 2 * k + 1, device=x0.device) / (2 * k + 1)
+        B, C, L = sq.shape
+        sq_flat = sq.reshape(B * C, 1, L)
+        local_var = F.conv1d(sq_flat, kernel, padding=k)
+        local_vol = torch.sqrt(local_var + 1e-8).reshape(B, C, L)
+        local_vol = local_vol / (local_vol.mean() + 1e-8)
+        return local_vol
+
     def q_sample(self, x0: torch.Tensor, t: torch.Tensor,
-                 noise: torch.Tensor | None = None):
+                 noise: torch.Tensor | None = None,
+                 local_vol: torch.Tensor | None = None):
         if noise is None:
             noise = torch.randn_like(x0)
         sqrt_ab = self._extract(self.sqrt_alpha_bar, t, x0.shape)
         sqrt_1m_ab = self._extract(self.sqrt_one_minus_alpha_bar, t, x0.shape)
+        if self.use_hetero_noise and local_vol is not None:
+            return sqrt_ab * x0 + sqrt_1m_ab * local_vol * noise
         return sqrt_ab * x0 + sqrt_1m_ab * noise
 
     def _get_target(self, x0: torch.Tensor, noise: torch.Tensor,
@@ -484,30 +566,81 @@ class ImprovedDDPM(BaseGenerativeModel):
 
     def _net_with_self_cond(self, net: nn.Module, x: torch.Tensor,
                             t: torch.Tensor, cond: torch.Tensor | None,
-                            x0_self_cond: torch.Tensor | None = None):
+                            x0_self_cond: torch.Tensor | None = None,
+                            local_vol: torch.Tensor | None = None):
         if self.use_self_cond:
             if x0_self_cond is None:
                 x0_self_cond = torch.zeros_like(x)
             net_input = torch.cat([x, x0_self_cond], dim=1)
         else:
             net_input = x
+        if self.use_hetero_noise:
+            if local_vol is None:
+                local_vol = torch.ones_like(x)
+            net_input = torch.cat([net_input, local_vol], dim=1)
         return net(net_input, t, cond)
+
+    @staticmethod
+    def _diff_kurtosis(x: torch.Tensor) -> torch.Tensor:
+        """Differentiable excess kurtosis over the last two dims."""
+        flat = x.reshape(x.shape[0], -1)
+        mu = flat.mean(dim=1, keepdim=True)
+        diff = flat - mu
+        var = (diff ** 2).mean(dim=1, keepdim=True).clamp(min=1e-8)
+        kurt = (diff ** 4).mean(dim=1, keepdim=True) / (var ** 2) - 3.0
+        return kurt.mean()
+
+    @staticmethod
+    def _diff_acf_abs(x: torch.Tensor, max_lag: int = 20) -> torch.Tensor:
+        """Differentiable ACF of |returns| averaged across batch and features."""
+        flat = x.reshape(x.shape[0], -1)
+        abs_ret = flat.abs()
+        mu = abs_ret.mean(dim=1, keepdim=True)
+        centered = abs_ret - mu
+        var = (centered ** 2).mean(dim=1, keepdim=True).clamp(min=1e-8)
+        acf_vals = []
+        for lag in range(1, max_lag + 1):
+            cov = (centered[:, lag:] * centered[:, :-lag]).mean(dim=1, keepdim=True)
+            acf_vals.append((cov / var).mean())
+        return torch.stack(acf_vals)
 
     def p_losses(self, x0: torch.Tensor, t: torch.Tensor,
                  cond: torch.Tensor | None = None):
         noise = torch.randn_like(x0)
-        x_noisy = self.q_sample(x0, t, noise)
+
+        local_vol = None
+        if self.use_hetero_noise:
+            local_vol = self._compute_local_vol(x0)
+
+        x_noisy = self.q_sample(x0, t, noise, local_vol=local_vol)
         target = self._get_target(x0, noise, t)
 
         x0_self_cond = None
         if self.use_self_cond and random.random() > 0.5:
             with torch.no_grad():
-                raw_out = self._net_with_self_cond(self.net, x_noisy, t, cond, None)
+                raw_out = self._net_with_self_cond(
+                    self.net, x_noisy, t, cond, None, local_vol)
                 x0_self_cond = self._predict_x0(x_noisy, t, raw_out).detach()
                 x0_self_cond = x0_self_cond.clamp(-5, 5)
 
-        pred = self._net_with_self_cond(self.net, x_noisy, t, cond, x0_self_cond)
-        return F.mse_loss(pred, target)
+        pred = self._net_with_self_cond(
+            self.net, x_noisy, t, cond, x0_self_cond, local_vol)
+        loss = F.mse_loss(pred, target)
+
+        if self.use_aux_sf_loss and self._train_step_counter % 5 == 0:
+            x0_pred = self._predict_x0(x_noisy, t, pred).clamp(-5, 5)
+            real_kurt = self._diff_kurtosis(x0)
+            pred_kurt = self._diff_kurtosis(x0_pred)
+            loss_kurt = (pred_kurt - real_kurt) ** 2
+
+            real_acf = self._diff_acf_abs(x0)
+            pred_acf = self._diff_acf_abs(x0_pred)
+            loss_acf = F.mse_loss(pred_acf, real_acf)
+
+            loss = loss + self.aux_sf_weight * (loss_kurt + loss_acf)
+
+        self._train_step_counter += 1
+        return loss
 
     def train(self, data: np.ndarray, cond: np.ndarray | None = None,
               epochs: int = 200, batch_size: int = 64, lr: float = 2e-4,
@@ -610,12 +743,19 @@ class ImprovedDDPM(BaseGenerativeModel):
         B = x.shape[0]
         t = torch.full((B,), t_idx, device=self.device, dtype=torch.long)
 
+        local_vol = None
+        if self.use_hetero_noise and x0_self_cond is not None:
+            local_vol = self._compute_local_vol(x0_self_cond)
+
         if cond is not None and guidance_scale > 1.0:
-            out_c = self._net_with_self_cond(net, x, t, cond, x0_self_cond)
-            out_u = self._net_with_self_cond(net, x, t, None, x0_self_cond)
+            out_c = self._net_with_self_cond(
+                net, x, t, cond, x0_self_cond, local_vol)
+            out_u = self._net_with_self_cond(
+                net, x, t, None, x0_self_cond, local_vol)
             model_out = out_u + guidance_scale * (out_c - out_u)
         else:
-            model_out = self._net_with_self_cond(net, x, t, cond, x0_self_cond)
+            model_out = self._net_with_self_cond(
+                net, x, t, cond, x0_self_cond, local_vol)
 
         pred_noise = self._predict_noise(x, t, model_out)
         x0_pred = self._predict_x0(x, t, model_out).clamp(-5, 5)
@@ -648,18 +788,24 @@ class ImprovedDDPM(BaseGenerativeModel):
             t = torch.full((B,), t_cur, device=self.device, dtype=torch.long)
             alpha_bar_t = self.alpha_bar[t_cur]
 
+            local_vol = None
+            if self.use_hetero_noise and x0_self_cond is not None:
+                local_vol = self._compute_local_vol(x0_self_cond)
+
             if cond is not None and guidance_scale > 1.0:
-                out_c = self._net_with_self_cond(net, x, t, cond, x0_self_cond)
-                out_u = self._net_with_self_cond(net, x, t, None, x0_self_cond)
+                out_c = self._net_with_self_cond(
+                    net, x, t, cond, x0_self_cond, local_vol)
+                out_u = self._net_with_self_cond(
+                    net, x, t, None, x0_self_cond, local_vol)
                 model_out = out_u + guidance_scale * (out_c - out_u)
             else:
-                model_out = self._net_with_self_cond(net, x, t, cond,
-                                                     x0_self_cond)
+                model_out = self._net_with_self_cond(
+                    net, x, t, cond, x0_self_cond, local_vol)
 
             pred_noise = self._predict_noise(x, t, model_out)
             x0_pred = self._predict_x0(x, t, model_out).clamp(-5, 5)
 
-            if self.use_self_cond:
+            if self.use_self_cond or self.use_hetero_noise:
                 x0_self_cond = x0_pred
 
             if i < len(timesteps) - 1:
@@ -689,6 +835,9 @@ class ImprovedDDPM(BaseGenerativeModel):
                 "use_self_cond": self.use_self_cond,
                 "use_sigmoid_schedule": self.use_sigmoid_schedule,
                 "use_cross_attn": self.use_cross_attn,
+                "use_temporal_attn": self.use_temporal_attn,
+                "use_hetero_noise": self.use_hetero_noise,
+                "use_aux_sf_loss": self.use_aux_sf_loss,
             },
         }
         if self.ema is not None:
