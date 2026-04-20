@@ -84,6 +84,9 @@ MODEL_CONFIGS = {
     "p3_vpred_auxsf_hi": dict(use_vpred=True, use_aux_sf_loss=True, aux_sf_weight=0.5),
     "p3_vpred_sigmoid_auxsf": dict(use_vpred=True, use_sigmoid_schedule=True, use_aux_sf_loss=True),
     "p3_vpred_auxsf_800ep": dict(use_vpred=True, use_aux_sf_loss=True),
+    # --- Phase 4: parameter-fair test at 64ch/400ep ---
+    "p4_baseline_64ch": dict(),
+    "p4_vpred_64ch": dict(use_vpred=True),
 }
 
 NORMFLOW_MODELS = {"p3_normflow"}
