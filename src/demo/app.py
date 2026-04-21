@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import argparse
+import re
 
 import numpy as np
 
@@ -67,6 +68,48 @@ def _get_device():
     return DEFAULT_DEVICE
 
 
+def _build_ddpm_kwargs_from_checkpoint(ckpt_path: str, defaults: dict) -> dict:
+    """
+    Build DDPM init kwargs by combining runtime defaults and checkpoint config.
+    This avoids architecture mismatches when checkpoint was trained with a
+    different DDPM width/depth than current defaults.
+    """
+    kwargs = dict(defaults)
+    import torch as _torch
+
+    ckpt = _torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    cfg = ckpt.get("config", {})
+    net_state = ckpt.get("net_state", {})
+
+    kwargs["n_features"] = cfg.get("n_features", kwargs["n_features"])
+    kwargs["seq_len"] = cfg.get("seq_len", kwargs["seq_len"])
+    kwargs["T"] = cfg.get("T", kwargs.get("T", 1000))
+    kwargs["cond_dim"] = cfg.get("cond_dim", kwargs["cond_dim"])
+    kwargs["cfg_drop_prob"] = cfg.get("cfg_drop_prob", kwargs.get("cfg_drop_prob", 0.1))
+
+    init_conv_w = net_state.get("init_conv.weight")
+    if init_conv_w is not None and init_conv_w.ndim == 3:
+        base_channels = int(init_conv_w.shape[0])
+        kwargs["base_channels"] = base_channels
+
+        down_channels = {}
+        pattern = re.compile(r"down_blocks\.(\d+)\.block1\.2\.weight")
+        for key, value in net_state.items():
+            match = pattern.match(key)
+            if match and hasattr(value, "shape") and len(value.shape) == 3:
+                idx = int(match.group(1))
+                down_channels[idx] = int(value.shape[0])
+
+        if down_channels:
+            channel_mults = tuple(
+                max(1, down_channels[idx] // max(base_channels, 1))
+                for idx in sorted(down_channels.keys())
+            )
+            kwargs["channel_mults"] = channel_mults
+
+    return kwargs
+
+
 def load_all_models(checkpoints_dir: str, data_dir: str):
     """Load all available model checkpoints."""
     import torch
@@ -103,28 +146,20 @@ def load_all_models(checkpoints_dir: str, data_dir: str):
         SCALER["mean"] = np.load(scaler_mean)
         SCALER["std"] = np.load(scaler_std)
 
-    # Peek into DDPM checkpoint to get architecture config
+    # Read DDPM checkpoint config so demo can construct matching architecture.
     ddpm_ckpt_path = os.path.join(checkpoints_dir, "ddpm.pt")
-    ddpm_extra_kwargs = {}
+    ddpm_kwargs = {"n_features": n_features, "seq_len": seq_len, "cond_dim": cond_dim, "device": device}
     if os.path.exists(ddpm_ckpt_path):
-        import torch as _torch
         try:
-            ckpt = _torch.load(ddpm_ckpt_path, map_location="cpu", weights_only=False)
-            cfg = ckpt.get("config", {})
-            if "padded_len" in cfg:
-                init_conv_w = ckpt["net_state"].get("init_conv.weight")
-                if init_conv_w is not None:
-                    ddpm_extra_kwargs["base_channels"] = init_conv_w.shape[0]
-        except Exception:
-            pass
+            ddpm_kwargs = _build_ddpm_kwargs_from_checkpoint(ddpm_ckpt_path, ddpm_kwargs)
+        except Exception as e:
+            print(f"  WARNING: Could not infer DDPM config from checkpoint: {e}")
 
     model_configs = {
         "ddpm": {
             "file": "ddpm.pt",
             "class": "DDPMModel",
-            "kwargs": {"n_features": n_features, "seq_len": seq_len,
-                       "cond_dim": cond_dim, "device": device,
-                       **ddpm_extra_kwargs},
+            "kwargs": ddpm_kwargs,
         },
         "garch": {
             "file": "garch.npz",
