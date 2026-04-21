@@ -306,6 +306,7 @@
             <label>Model:</label>
             <select id="model-select">
                 <option value="ddpm">DDPM</option>
+                <option value="ddpm_improved">DDPM (Improved)</option>
                 <option value="garch">GARCH</option>
                 <option value="vae">VAE</option>
                 <option value="timegan">TimeGAN</option>
@@ -372,6 +373,7 @@
             <label>Model:</label>
             <select id="val-model-select">
                 <option value="ddpm">DDPM</option>
+                <option value="ddpm_improved">DDPM (Improved)</option>
                 <option value="garch">GARCH</option>
                 <option value="vae">VAE</option>
                 <option value="timegan">TimeGAN</option>
@@ -387,6 +389,18 @@
 
 <script>
 const API = '';
+const MODEL_LABELS = {
+    ddpm: 'DDPM',
+    ddpm_improved: 'DDPM (Improved)',
+    garch: 'GARCH',
+    vae: 'VAE',
+    timegan: 'TimeGAN',
+    flow: 'NormFlow',
+};
+
+function modelLabel(modelKey) {
+    return MODEL_LABELS[modelKey] || modelKey.toUpperCase();
+}
 
 // ---- State ----
 let currentRegime = 'crisis';
@@ -589,7 +603,7 @@ function renderComparison(data) {
         }
         const sfClass = info.n_pass >= 4 ? 'sf-pass' : 'sf-fail';
         html += `<tr>
-            <td><strong>${m.toUpperCase()}</strong></td>
+            <td><strong>${modelLabel(m)}</strong></td>
             <td>${(info.mmd || 0).toFixed(4)}</td>
             <td>${(info.wasserstein_1d || 0).toFixed(4)}</td>
             <td>${(info.ks_stat || 0).toFixed(4)}</td>
@@ -630,7 +644,7 @@ document.getElementById('validate-btn').addEventListener('click', async () => {
 });
 
 function renderValidation(data) {
-    let html = `<h3 style="margin-bottom:16px">${data.model.toUpperCase()} — ${data.n_pass}/${data.n_total} tests passed</h3>`;
+    let html = `<h3 style="margin-bottom:16px">${modelLabel(data.model)} — ${data.n_pass}/${data.n_total} tests passed</h3>`;
     html += '<div class="sf-grid">';
 
     data.results.forEach(r => {
@@ -663,7 +677,7 @@ function renderValidation(data) {
             data.models.forEach(m => {
                 const opt = document.createElement('option');
                 opt.value = m;
-                opt.textContent = m.toUpperCase();
+                opt.textContent = modelLabel(m);
                 sel.appendChild(opt);
             });
         });
