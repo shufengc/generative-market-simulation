@@ -65,7 +65,103 @@ Yahoo Finance + FRED API
         └──────────────────────┘
 ```
 
-## Results
+## Model Overview and Cross-Model Comparison
+
+### Model Overview
+
+Models are presented in the project order used by the demo:
+
+1. **DDPM**  
+   Diffusion-based generator with 1-D denoising networks and classifier-free conditioning. This is the main research line, with both baseline and improved variants.
+
+2. **TimeGAN**  
+   Adversarial sequence model with embedding/supervisor/generator-discriminator stages. It serves as the deep GAN baseline for temporal realism.
+
+3. **VAE**  
+   GRU encoder-decoder variational model with KL annealing. It is the lightweight latent-variable baseline with stable training behavior.
+
+4. **GARCH**  
+   Classical statistical baseline using per-asset GARCH(1,1) dynamics with correlated innovations. It provides a non-deep reference point.
+
+5. **RealNVP**  
+   Flow-based model (normalizing flow) with affine coupling transformations. It is the strongest distribution-matching baseline in this project.
+
+### Cross-Model Comparison Summary
+
+| Model | Stylized Facts (out of 6) | MMD | Wasserstein-1 | Discriminative Score | Key Takeaway |
+|-------|:---------------------------:|:---:|:-------------:|:--------------------:|--------------|
+| **DDPM (Improved)** | **5.0 / 6** | 0.021 | 0.153 | 0.78 | Best DDPM configuration for stylized-fact coverage and consistency |
+| **TimeGAN** | -- | -- | -- | -- | Included as adversarial temporal baseline in the shared pipeline |
+| **VAE** | -- | -- | -- | -- | Included as compact latent baseline; useful for stability and ablation completeness |
+| **GARCH** | -- | -- | -- | -- | Traditional statistical baseline for sanity-check comparisons |
+| **RealNVP (NormFlow)** | **5.0 / 6** | **0.005** | **0.085** | 0.74 | Strongest distributional metrics baseline; key head-to-head comparator for DDPM |
+
+- DDPM improved and RealNVP both reach high stylized-fact coverage, but RealNVP remains stronger on MMD/W1.
+- DDPM improved is the project's main diffusion result and best DDPM-line model for final comparisons.
+- TimeGAN, VAE, and GARCH are retained to cover GAN, variational, and classical statistical modeling paradigms.
+- Final interpretation should consider both stylized-fact pass rate and distributional metrics jointly.
+
+## Results Figures (project/results)
+
+### `comparison_table.png`
+<p align="center">
+  <img src="results/comparison_table.png" width="700" alt="Overall comparison table across models and metrics">
+</p>
+
+This figure summarizes headline metrics in one place and is the quickest way to compare global model ranking.
+
+### `stylized_facts_heatmap.png`
+<p align="center">
+  <img src="results/stylized_facts_heatmap.png" width="700" alt="Stylized facts heatmap for model pass/fail behavior">
+</p>
+
+This heatmap highlights which stylized facts are consistently reproduced and where model failures concentrate.
+
+### `training_losses.png`
+<p align="center">
+  <img src="results/training_losses.png" width="700" alt="Training loss curves across models">
+</p>
+
+This plot is used to check optimization stability, convergence rate, and late-epoch training behavior.
+
+### `acf_absolute.png`
+<p align="center">
+  <img src="results/acf_absolute.png" width="700" alt="Autocorrelation of absolute returns">
+</p>
+
+This chart evaluates long-memory structure in volatility magnitude over multiple lags.
+
+### `acf_squared.png`
+<p align="center">
+  <img src="results/acf_squared.png" width="700" alt="Autocorrelation of squared returns">
+</p>
+
+This chart focuses on volatility clustering by measuring serial dependence in squared returns.
+
+### `distributions.png`
+<p align="center">
+  <img src="results/distributions.png" width="700" alt="Return distribution comparison between real and synthetic samples">
+</p>
+
+This figure compares center and tail behavior of synthetic returns versus real market returns.
+
+### `qq_plots.png`
+<p align="center">
+  <img src="results/qq_plots.png" width="700" alt="QQ plot comparison of synthetic versus real returns">
+</p>
+
+QQ plots expose tail mismatch directly and show whether extreme quantiles are under- or over-estimated.
+
+### `correlation_matrices.png`
+<p align="center">
+  <img src="results/correlation_matrices.png" width="700" alt="Correlation matrix comparison for cross-asset structure">
+</p>
+
+This figure checks how well each model preserves cross-asset dependency structure.
+
+For phase-wise DDPM evolution and ablation details, see the next section.
+
+## DDPM Ablation Results
 
 Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows, 400 epochs, 3 seeds (42, 123, 456).
 
