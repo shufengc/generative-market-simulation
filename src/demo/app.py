@@ -110,6 +110,63 @@ def _build_ddpm_kwargs_from_checkpoint(ckpt_path: str, defaults: dict) -> dict:
     return kwargs
 
 
+def _build_improved_ddpm_kwargs_from_checkpoint(ckpt_path: str, defaults: dict) -> dict:
+    """
+    Build ImprovedDDPM init kwargs from checkpoint config + inferred net shape.
+    """
+    kwargs = dict(defaults)
+    import torch as _torch
+
+    ckpt = _torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    cfg = ckpt.get("config", {})
+    net_state = ckpt.get("net_state", {})
+
+    for key in (
+        "n_features", "seq_len", "T", "cond_dim", "cfg_drop_prob",
+        "use_dit", "use_vpred", "use_self_cond", "use_sigmoid_schedule",
+        "use_cross_attn", "use_temporal_attn", "use_hetero_noise",
+        "use_aux_sf_loss", "use_acf_guidance", "use_wavelet",
+        "use_student_t_noise",
+    ):
+        if key in cfg:
+            kwargs[key] = cfg[key]
+
+    if kwargs.get("use_dit", False):
+        input_proj_w = net_state.get("input_proj.weight")
+        if input_proj_w is not None and getattr(input_proj_w, "ndim", 0) == 2:
+            kwargs["dit_d_model"] = int(input_proj_w.shape[0])
+
+        block_indices = set()
+        pattern = re.compile(r"blocks\.(\d+)\.")
+        for key in net_state.keys():
+            match = pattern.match(key)
+            if match:
+                block_indices.add(int(match.group(1)))
+        if block_indices:
+            kwargs["dit_n_layers"] = max(block_indices) + 1
+    else:
+        init_conv_w = net_state.get("init_conv.weight")
+        if init_conv_w is not None and init_conv_w.ndim == 3:
+            base_channels = int(init_conv_w.shape[0])
+            kwargs["base_channels"] = base_channels
+
+            down_channels = {}
+            pattern = re.compile(r"down_blocks\.(\d+)\.block1\.2\.weight")
+            for key, value in net_state.items():
+                match = pattern.match(key)
+                if match and hasattr(value, "shape") and len(value.shape) == 3:
+                    idx = int(match.group(1))
+                    down_channels[idx] = int(value.shape[0])
+
+            if down_channels:
+                kwargs["channel_mults"] = tuple(
+                    max(1, down_channels[idx] // max(base_channels, 1))
+                    for idx in sorted(down_channels.keys())
+                )
+
+    return kwargs
+
+
 def load_all_models(checkpoints_dir: str, data_dir: str):
     """Load all available model checkpoints."""
     import torch
@@ -155,11 +212,26 @@ def load_all_models(checkpoints_dir: str, data_dir: str):
         except Exception as e:
             print(f"  WARNING: Could not infer DDPM config from checkpoint: {e}")
 
+    improved_ckpt_path = os.path.join(checkpoints_dir, "ddpm_improved.pt")
+    improved_ddpm_kwargs = {"n_features": n_features, "seq_len": seq_len, "cond_dim": cond_dim, "device": device}
+    if os.path.exists(improved_ckpt_path):
+        try:
+            improved_ddpm_kwargs = _build_improved_ddpm_kwargs_from_checkpoint(
+                improved_ckpt_path, improved_ddpm_kwargs
+            )
+        except Exception as e:
+            print(f"  WARNING: Could not infer improved DDPM config from checkpoint: {e}")
+
     model_configs = {
         "ddpm": {
             "file": "ddpm.pt",
             "class": "DDPMModel",
             "kwargs": ddpm_kwargs,
+        },
+        "ddpm_improved": {
+            "file": "ddpm_improved.pt",
+            "class": "ImprovedDDPM",
+            "kwargs": improved_ddpm_kwargs,
         },
         "garch": {
             "file": "garch.npz",
@@ -183,9 +255,17 @@ def load_all_models(checkpoints_dir: str, data_dir: str):
         },
     }
 
-    from src.models import DDPMModel, GARCHModel, FinancialVAE, TimeGANModel, NormalizingFlowModel
+    from src.models import (
+        DDPMModel,
+        ImprovedDDPM,
+        GARCHModel,
+        FinancialVAE,
+        TimeGANModel,
+        NormalizingFlowModel,
+    )
     class_map = {
         "DDPMModel": DDPMModel,
+        "ImprovedDDPM": ImprovedDDPM,
         "GARCHModel": GARCHModel,
         "FinancialVAE": FinancialVAE,
         "TimeGANModel": TimeGANModel,
@@ -253,13 +333,14 @@ async def generate(req: GenerateRequest):
     n_paths = min(req.n_paths, 500)
 
     cond = None
-    if req.model == "ddpm" and model.cond_dim > 0:
+    is_diffusion_model = req.model in {"ddpm", "ddpm_improved"}
+    if is_diffusion_model and getattr(model, "cond_dim", 0) > 0:
         regime_vectors = get_regime_conditioning_vectors()
         if req.regime in regime_vectors:
             cond = regime_vectors[req.regime]
 
     try:
-        if req.model == "ddpm":
+        if is_diffusion_model:
             synthetic = model.generate(n_paths, cond=cond)
         else:
             synthetic = model.generate(n_paths)
