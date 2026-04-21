@@ -145,7 +145,11 @@ def step_train(data_dir: str, models_to_train: list[str],
 
         elif model_name == "timegan":
             from src.models.gan import TimeGANModel
-            model = TimeGANModel(n_features=n_features, seq_len=seq_len, device=device)
+            # TimeGAN requires double backward through GRU; run on CPU to avoid CuDNN limitation.
+            tgan_device = "cpu"
+            if device != "cpu":
+                print(f"  TimeGAN forcing device to CPU (requested device was {device})")
+            model = TimeGANModel(n_features=n_features, seq_len=seq_len, device=tgan_device)
             tgan_epochs = int(epochs * 1.5)
             history = model.train(windows, epochs=tgan_epochs, batch_size=batch_size)
             model.save(os.path.join(CHECKPOINTS_DIR, "timegan.pt"))
