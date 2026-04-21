@@ -29,7 +29,7 @@ Every generated dataset is validated against six well-documented empirical regul
 
 | Model | Type | Key Idea |
 |-------|------|----------|
-| **DDPM** | Diffusion | 1-D U-Net denoiser with v-prediction, sigmoid schedule, DDIM sampling, EMA, and classifier-free guidance |
+| **DDPM** | Diffusion | 1-D U-Net denoiser with v-prediction, DDIM sampling, EMA, and classifier-free guidance |
 | **TimeGAN** | GAN | Embedding + supervisor + adversarial training for temporal latent dynamics |
 | **VAE** | Variational | GRU encoder-decoder with KL annealing |
 | **GARCH** | Statistical | Per-asset GARCH(1,1) with correlated Student-t innovations |
@@ -67,20 +67,25 @@ Yahoo Finance + FRED API
 
 ## Results
 
-Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows, 400 epochs.
+Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows, 400 epochs, 3 seeds (42, 123, 456).
 
-| Model | Stylized Facts | MMD | Wasserstein-1 | Discriminative Score |
-|-------|:--------------:|:---:|:-------------:|:--------------------:|
-| **DDPM (Improved)** | 3 / 6 | 0.020 | 0.176 | **0.66** |
-| **NormFlow** | **5 / 6** | **0.011** | **0.101** | 0.74 |
+| Model | Params | Stylized Facts | MMD | Wasserstein-1 | Discriminative Score |
+|-------|-------:|:--------------:|:---:|:-------------:|:--------------------:|
+| **DDPM (v-prediction)** | 9.0M | **4.7 / 6** | 0.019 | 0.161 | 0.82 |
+| **DDPM (v-prediction)** | 2.3M | **4.3 / 6** | 0.039 | 0.249 | 0.89 |
+| **NormFlow** | 6.7M | **5.0 / 6** | **0.005** | **0.085** | 0.74 |
 
-*Discriminative score: accuracy of a classifier distinguishing real from synthetic (0.5 = indistinguishable). DDPM achieves the best discriminative score.*
+*Stylized facts: fat tails, volatility clustering, leverage effect, slow ACF decay, cross-asset correlations, no raw autocorrelation.*
 
-The improved DDPM uses v-prediction parameterization and a sigmoid noise schedule, yielding a 93% improvement in MMD (0.020 vs 0.276) and 32% improvement in discriminative score (0.66 vs 0.98) over the baseline DDPM. Full ablation study results are in `experiments/results/`.
+The key algorithmic innovation is **v-prediction** (Salimans & Ho, 2022), which replaces the standard noise prediction target with a velocity target. This single change improves stylized facts from 1.7/6 to 4.3/6 and MMD by 9x -- with zero additional parameters or training time. Even at 2.3M params (3x fewer than NormFlow), v-prediction matches NormFlow on 4 of 6 stylized facts.
+
+**Key discovery**: The sigmoid noise schedule, previously believed to be beneficial, was found to *suppress* volatility clustering and fat tails when combined with v-prediction (dropping SF from 4.7 to 2.7). This interaction effect was identified through controlled Phase 3 experiments.
+
+Full experiment results across 5 phases of ablation are in `experiments/results/`.
 
 ### DDPM Ablation Study
 
-Seven DDPM variants were tested across 3 random seeds. See `experiments/results/ANALYSIS.md` for the full report.
+Multiple DDPM variants were tested across 5 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison and `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test.
 
 <p align="center">
   <img src="experiments/results/fig_radar_chart.png" width="700" alt="Radar chart of normalized metrics across DDPM variants">
@@ -157,7 +162,7 @@ from src.models.ddpm_improved import ImprovedDDPM
 from src.data.regime_labels import get_regime_conditioning_vectors
 
 model = ImprovedDDPM(n_features=16, seq_len=60, cond_dim=5, device="mps",
-                     use_vpred=True, use_sigmoid_schedule=True)
+                     use_vpred=True)
 model.load("checkpoints/ddpm.pt")
 
 crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["crisis"])
@@ -174,7 +179,7 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 │   ├── models/
 │   │   ├── base_model.py        # Abstract interface for all models
 │   │   ├── ddpm.py              # DDPM baseline
-│   │   ├── ddpm_improved.py     # DDPM with v-prediction, sigmoid schedule, self-conditioning
+│   │   ├── ddpm_improved.py     # DDPM with v-prediction, ablation-ready improvements
 │   │   ├── garch.py             # GARCH(1,1) with correlated innovations
 │   │   ├── vae.py               # GRU VAE with KL annealing
 │   │   ├── gan.py               # TimeGAN with gradient penalty
@@ -190,7 +195,7 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 │   │   └── config.py            # Central configuration
 │   └── run_pipeline.py          # End-to-end orchestration
 ├── experiments/
-│   ├── run_ddpm_ablation.py     # Ablation study: 7 variants x 3 seeds
+│   ├── run_ddpm_ablation.py     # Ablation study: multi-phase, 20+ variants x 3 seeds
 │   ├── report_ddpm.py           # 3-level evaluation report generator
 │   └── results/                 # Figures, tables, raw JSON results
 ├── notebooks/

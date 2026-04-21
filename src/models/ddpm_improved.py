@@ -15,6 +15,11 @@ can instantiate the baseline or any combination of improvements:
   6. use_temporal_attn   -- multi-head self-attention after each ResBlock
   7. use_hetero_noise    -- heteroskedastic (volatility-scaled) noise injection
   8. use_aux_sf_loss     -- auxiliary stylized-fact losses (kurtosis + ACF)
+
+  Phase 5:
+  9.  use_acf_guidance   -- inference-time ACF guidance during DDIM sampling
+  10. use_wavelet        -- wavelet-domain diffusion (train on wavelet coefficients)
+  11. use_student_t_noise -- Student-t noise in forward process instead of Gaussian
 """
 
 from __future__ import annotations
@@ -412,6 +417,12 @@ class ImprovedDDPM(BaseGenerativeModel):
         use_aux_sf_loss: bool = False,
         hetero_noise_k: int = 5,
         aux_sf_weight: float = 0.1,
+        # Phase 5 flags
+        use_acf_guidance: bool = False,
+        acf_guidance_scale: float = 0.05,
+        use_wavelet: bool = False,
+        use_student_t_noise: bool = False,
+        student_t_df: float = 5.0,
         # DiT-specific
         dit_d_model: int = 256,
         dit_n_heads: int = 8,
@@ -435,6 +446,12 @@ class ImprovedDDPM(BaseGenerativeModel):
             parts.append("hetero")
         if use_aux_sf_loss:
             parts.append("auxsf")
+        if use_acf_guidance:
+            parts.append("acfguide")
+        if use_wavelet:
+            parts.append("wavelet")
+        if use_student_t_noise:
+            parts.append("studentt")
         if parts:
             tag += "-" + "+".join(parts)
 
@@ -454,6 +471,12 @@ class ImprovedDDPM(BaseGenerativeModel):
         self.use_aux_sf_loss = use_aux_sf_loss
         self.hetero_noise_k = hetero_noise_k
         self.aux_sf_weight = aux_sf_weight
+        self.use_acf_guidance = use_acf_guidance
+        self.acf_guidance_scale = acf_guidance_scale
+        self.use_wavelet = use_wavelet
+        self.use_student_t_noise = use_student_t_noise
+        self.student_t_df = student_t_df
+        self._ref_acf = None
 
         if use_sigmoid_schedule:
             betas = sigmoid_beta_schedule(T)
@@ -502,6 +525,48 @@ class ImprovedDDPM(BaseGenerativeModel):
         self.ema: EMA | None = None
         self._train_step_counter = 0
 
+    @staticmethod
+    def _wavelet_encode(data: np.ndarray) -> np.ndarray:
+        """Apply Haar wavelet transform along time axis. (N, T, D) -> (N, T, D)."""
+        import pywt
+        N, T, D = data.shape
+        coeffs_list = []
+        for i in range(N):
+            asset_coeffs = []
+            for d in range(D):
+                coeffs = pywt.wavedec(data[i, :, d], "haar", level=2)
+                flat = np.concatenate(coeffs)
+                asset_coeffs.append(flat)
+            coeffs_list.append(np.stack(asset_coeffs, axis=-1))
+        result = np.stack(coeffs_list)
+        return result[:, :T, :]
+
+    @staticmethod
+    def _wavelet_decode(coeffs_data: np.ndarray, orig_len: int) -> np.ndarray:
+        """Invert Haar wavelet transform. (N, T, D) -> (N, orig_len, D)."""
+        import pywt
+        N, T, D = coeffs_data.shape
+        dummy = np.zeros(orig_len)
+        ref_coeffs = pywt.wavedec(dummy, "haar", level=2)
+        coeff_lengths = [len(c) for c in ref_coeffs]
+
+        result = np.zeros((N, orig_len, D), dtype=coeffs_data.dtype)
+        for i in range(N):
+            for d in range(D):
+                flat = coeffs_data[i, :, d]
+                split_coeffs = []
+                idx = 0
+                for length in coeff_lengths:
+                    end = min(idx + length, len(flat))
+                    c = flat[idx:end]
+                    if len(c) < length:
+                        c = np.pad(c, (0, length - len(c)))
+                    split_coeffs.append(c)
+                    idx = end
+                rec = pywt.waverec(split_coeffs, "haar")
+                result[i, :, d] = rec[:orig_len]
+        return result
+
     def register_schedule(self, betas, alphas, alpha_bar):
         self.betas = betas.to(self.device)
         self.alphas = alphas.to(self.device)
@@ -529,11 +594,20 @@ class ImprovedDDPM(BaseGenerativeModel):
         local_vol = local_vol / (local_vol.mean() + 1e-8)
         return local_vol
 
+    def _sample_noise(self, shape: tuple, device: torch.device) -> torch.Tensor:
+        """Sample noise: Gaussian by default, Student-t if enabled."""
+        if self.use_student_t_noise:
+            dist = torch.distributions.StudentT(df=self.student_t_df)
+            noise = dist.sample(shape).to(device)
+            noise = noise / (self.student_t_df / (self.student_t_df - 2)) ** 0.5
+            return noise
+        return torch.randn(shape, device=device)
+
     def q_sample(self, x0: torch.Tensor, t: torch.Tensor,
                  noise: torch.Tensor | None = None,
                  local_vol: torch.Tensor | None = None):
         if noise is None:
-            noise = torch.randn_like(x0)
+            noise = self._sample_noise(x0.shape, x0.device)
         sqrt_ab = self._extract(self.sqrt_alpha_bar, t, x0.shape)
         sqrt_1m_ab = self._extract(self.sqrt_one_minus_alpha_bar, t, x0.shape)
         if self.use_hetero_noise and local_vol is not None:
@@ -606,7 +680,7 @@ class ImprovedDDPM(BaseGenerativeModel):
 
     def p_losses(self, x0: torch.Tensor, t: torch.Tensor,
                  cond: torch.Tensor | None = None):
-        noise = torch.randn_like(x0)
+        noise = self._sample_noise(x0.shape, x0.device)
 
         local_vol = None
         if self.use_hetero_noise:
@@ -647,7 +721,23 @@ class ImprovedDDPM(BaseGenerativeModel):
               ema_decay: float = 0.9999, **kwargs) -> dict:
         self.net.train()
 
-        x = torch.tensor(data, dtype=torch.float32)
+        train_data = data
+        if self.use_wavelet:
+            train_data = self._wavelet_encode(data)
+
+        if self.use_acf_guidance:
+            flat = data.reshape(data.shape[0], -1)
+            abs_ret = np.abs(flat)
+            mu = abs_ret.mean(axis=1, keepdims=True)
+            centered = abs_ret - mu
+            var = centered.var(axis=1, keepdims=True) + 1e-8
+            acf_vals = []
+            for lag in range(1, 21):
+                cov = (centered[:, lag:] * centered[:, :-lag]).mean(axis=1, keepdims=True)
+                acf_vals.append((cov / var).mean())
+            self._ref_acf = torch.tensor(acf_vals, dtype=torch.float32)
+
+        x = torch.tensor(train_data, dtype=torch.float32)
         if x.ndim == 2:
             x = x.unsqueeze(-1)
         x = x.permute(0, 2, 1)  # (N, D, W)
@@ -708,7 +798,6 @@ class ImprovedDDPM(BaseGenerativeModel):
         self.is_trained = True
         return {"losses": losses}
 
-    @torch.no_grad()
     def generate(self, n_samples: int, seq_len: int | None = None,
                  cond: np.ndarray | None = None, use_ddim: bool = True,
                  ddim_steps: int = 50, guidance_scale: float = 2.0,
@@ -728,16 +817,31 @@ class ImprovedDDPM(BaseGenerativeModel):
             if cond_t.ndim == 1:
                 cond_t = cond_t.unsqueeze(0).expand(n_samples, -1)
 
-        if use_ddim:
-            x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale)
+        if self.use_acf_guidance:
+            if use_ddim:
+                x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale)
+            else:
+                x0_self_cond = None
+                for t_idx in reversed(range(self.T)):
+                    x, x0_self_cond = self._p_sample_step(
+                        x, t_idx, net, cond_t, guidance_scale, x0_self_cond)
         else:
-            x0_self_cond = None
-            for t_idx in reversed(range(self.T)):
-                x, x0_self_cond = self._p_sample_step(
-                    x, t_idx, net, cond_t, guidance_scale, x0_self_cond)
+            with torch.no_grad():
+                if use_ddim:
+                    x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale)
+                else:
+                    x0_self_cond = None
+                    for t_idx in reversed(range(self.T)):
+                        x, x0_self_cond = self._p_sample_step(
+                            x, t_idx, net, cond_t, guidance_scale, x0_self_cond)
 
         x = x[:, :, :seq_len]
-        return x.permute(0, 2, 1).cpu().numpy()
+        result = x.permute(0, 2, 1).cpu().numpy()
+
+        if self.use_wavelet:
+            result = self._wavelet_decode(result, seq_len)
+
+        return result
 
     def _p_sample_step(self, x, t_idx, net, cond, guidance_scale, x0_self_cond):
         B = x.shape[0]
@@ -774,6 +878,25 @@ class ImprovedDDPM(BaseGenerativeModel):
             x = mean
 
         return x, x0_pred
+
+    def _acf_guidance_step(self, x: torch.Tensor, net: nn.Module,
+                           t: torch.Tensor, cond: torch.Tensor | None,
+                           step_idx: int, total_steps: int) -> torch.Tensor:
+        """Apply inference-time ACF guidance: nudge x toward correct ACF profile."""
+        if self._ref_acf is None or not self.use_acf_guidance:
+            return x
+        if step_idx % 5 != 0:
+            return x
+
+        x_in = x.detach().requires_grad_(True)
+        model_out = net(x_in, t, cond)
+        x0_pred = self._predict_x0(x_in, t, model_out).clamp(-5, 5)
+        pred_acf = self._diff_acf_abs(x0_pred)
+        ref = self._ref_acf.to(x.device)
+        loss = F.mse_loss(pred_acf, ref)
+        grad = torch.autograd.grad(loss, x_in)[0]
+        scale = self.acf_guidance_scale * (step_idx / max(total_steps, 1))
+        return x.detach() - scale * grad.detach()
 
     def _ddim_sample(self, x: torch.Tensor, net: nn.Module, n_steps: int,
                      cond: torch.Tensor | None,
@@ -817,6 +940,9 @@ class ImprovedDDPM(BaseGenerativeModel):
             x = (alpha_bar_next.sqrt() * x0_pred +
                  (1 - alpha_bar_next).sqrt() * pred_noise)
 
+            if self.use_acf_guidance:
+                x = self._acf_guidance_step(x, net, t, cond, i, n_steps)
+
         return x
 
     def save(self, path: str) -> None:
@@ -838,6 +964,9 @@ class ImprovedDDPM(BaseGenerativeModel):
                 "use_temporal_attn": self.use_temporal_attn,
                 "use_hetero_noise": self.use_hetero_noise,
                 "use_aux_sf_loss": self.use_aux_sf_loss,
+                "use_acf_guidance": self.use_acf_guidance,
+                "use_wavelet": self.use_wavelet,
+                "use_student_t_noise": self.use_student_t_noise,
             },
         }
         if self.ema is not None:

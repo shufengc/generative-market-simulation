@@ -87,6 +87,12 @@ MODEL_CONFIGS = {
     # --- Phase 4: parameter-fair test at 64ch/400ep ---
     "p4_baseline_64ch": dict(),
     "p4_vpred_64ch": dict(use_vpred=True),
+    # --- Phase 5: innovations (solo + vpred combos) ---
+    "p5_wavelet_only": dict(use_wavelet=True),
+    "p5_studentt_only": dict(use_student_t_noise=True, student_t_df=5.0),
+    "p5_vpred_acfguide": dict(use_vpred=True, use_acf_guidance=True),
+    "p5_vpred_wavelet": dict(use_vpred=True, use_wavelet=True),
+    "p5_vpred_studentt": dict(use_vpred=True, use_student_t_noise=True, student_t_df=5.0),
 }
 
 NORMFLOW_MODELS = {"p3_normflow"}
