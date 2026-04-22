@@ -4,7 +4,7 @@ End-to-end pipeline for the Generative Market Simulation project.
 Usage:
     python -m src.run_pipeline                     # full pipeline
     python -m src.run_pipeline --skip-download      # skip data download
-    python -m src.run_pipeline --models ddpm garch   # train only selected models
+    python -m src.run_pipeline --models ddpm ddpm_improved garch   # train only selected models
     python -m src.run_pipeline --quick              # fast run for testing
 """
 
@@ -84,7 +84,6 @@ def step_regime_labels(dataset: dict, data_dir: str):
         macro_df=dataset.get("macro_df"),
         window_dates=dataset["window_dates"],
         data_dir=data_dir,
-        prices_df=dataset.get("prices_df"),
     )
     return regime_data
 
@@ -131,6 +130,24 @@ def step_train(data_dir: str, models_to_train: list[str],
             model.save(os.path.join(CHECKPOINTS_DIR, "ddpm.pt"))
             training_losses[model_name] = history["losses"]
 
+        elif model_name == "ddpm_improved":
+            from src.models.ddpm_improved import ImprovedDDPM
+            is_quick = epochs < 100
+            model = ImprovedDDPM(
+                n_features=n_features, seq_len=seq_len,
+                cond_dim=cond_dim, device=device,
+                T=200 if is_quick else 1000,
+                base_channels=32 if is_quick else 128,
+                channel_mults=(1, 2) if is_quick else (1, 2, 4),
+                # Project's strongest configuration from ablation phases.
+                use_vpred=True,
+                use_student_t_noise=True,
+                student_t_df=5.0,
+            )
+            history = model.train(windows, cond=cond, epochs=epochs, batch_size=batch_size, lr=lr)
+            model.save(os.path.join(CHECKPOINTS_DIR, "ddpm_improved.pt"))
+            training_losses[model_name] = history["losses"]
+
         elif model_name == "garch":
             from src.models.garch import GARCHModel
             model = GARCHModel(n_features=n_features, seq_len=seq_len, device=device)
@@ -146,7 +163,11 @@ def step_train(data_dir: str, models_to_train: list[str],
 
         elif model_name == "timegan":
             from src.models.gan import TimeGANModel
-            model = TimeGANModel(n_features=n_features, seq_len=seq_len, device=device)
+            # TimeGAN requires double backward through GRU; run on CPU to avoid CuDNN limitation.
+            tgan_device = "cpu"
+            if device != "cpu":
+                print(f"  TimeGAN forcing device to CPU (requested device was {device})")
+            model = TimeGANModel(n_features=n_features, seq_len=seq_len, device=tgan_device)
             tgan_epochs = int(epochs * 1.5)
             history = model.train(windows, epochs=tgan_epochs, batch_size=batch_size)
             model.save(os.path.join(CHECKPOINTS_DIR, "timegan.pt"))
@@ -180,14 +201,12 @@ def step_evaluate(trained_models: dict, data_dir: str, n_samples: int = 500):
     from src.evaluation.stylized_facts import run_all_tests, count_passes
     from src.evaluation.metrics import full_evaluation
 
-    real_sample = windows[:n_samples]
-
     results = {}
     for name, model in trained_models.items():
         print(f"\n--- Evaluating {name.upper()} ---")
         try:
             synthetic = model.generate(n_samples)
-            sf = run_all_tests(synthetic, real_returns=real_sample)
+            sf = run_all_tests(synthetic)
             n_pass = count_passes(sf)
             metrics = full_evaluation(windows[:n_samples], synthetic[:n_samples])
 
@@ -241,7 +260,7 @@ def step_dashboard(results: dict, data_dir: str, training_losses: dict):
 def main():
     parser = argparse.ArgumentParser(description="Run full pipeline")
     parser.add_argument("--skip-download", action="store_true", help="Skip data download")
-    parser.add_argument("--models", nargs="+", default=["ddpm", "garch", "vae", "timegan", "flow"],
+    parser.add_argument("--models", nargs="+", default=["ddpm", "ddpm_improved", "garch", "vae", "timegan", "flow"],
                         help="Models to train")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--quick", action="store_true", help="Quick run with reduced epochs/samples")
@@ -253,7 +272,7 @@ def main():
     if args.quick:
         epochs = args.epochs or 20
         n_samples = min(args.n_samples, 200)
-        stride = 5
+        stride = 10
     else:
         epochs = args.epochs or DEFAULT_EPOCHS
         n_samples = args.n_samples
