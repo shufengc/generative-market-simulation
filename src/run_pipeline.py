@@ -48,7 +48,7 @@ def step_download(data_dir: str, fred_key: str | None = None):
     return prices, macro
 
 
-def step_preprocess(data_dir: str, window_size: int = 60, stride: int = 5):
+def step_preprocess(data_dir: str, window_size: int = 60, stride: int = 1):
     """Step 2: Preprocess data into returns and windows."""
     print("\n" + "=" * 60)
     print("STEP 2: Preprocessing data")
@@ -276,7 +276,7 @@ def main():
     else:
         epochs = args.epochs or DEFAULT_EPOCHS
         n_samples = args.n_samples
-        stride = 5
+        stride = 1
 
     device = DEFAULT_DEVICE
     print(f"Device: {device}")
