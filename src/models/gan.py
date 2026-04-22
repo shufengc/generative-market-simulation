@@ -56,43 +56,51 @@ def _flat_time(x: torch.Tensor) -> torch.Tensor:
     return x.reshape(-1, x.shape[-1])
 
 
-def _acf_abs(x: torch.Tensor, max_lag: int = 20) -> torch.Tensor:
-    """ACF of |x| at lags 1..max_lag, per feature. Returns (max_lag, D)."""
-    flat = _flat_time(x).abs()
-    flat = flat - flat.mean(dim=0, keepdim=True)
-    var = (flat ** 2).mean(dim=0) + 1e-8
-    acfs = []
-    for lag in range(1, max_lag + 1):
-        cov = (flat[lag:] * flat[:-lag]).mean(dim=0)
-        acfs.append(cov / var)
-    return torch.stack(acfs, dim=0)
+def _pool(x: torch.Tensor) -> torch.Tensor:
+    """(B, T, D) -> (B*T,) via mean across assets — matches evaluator's _to_1d."""
+    return x.mean(dim=-1).reshape(-1)
 
 
-def _leverage_corr(x: torch.Tensor) -> torch.Tensor:
-    """Per-feature corr(r_t, |r_{t+1}|). Returns (D,)."""
-    flat = _flat_time(x)
-    r_t = flat[:-1]
-    abs_r_next = flat[1:].abs()
-    r_t = r_t - r_t.mean(dim=0, keepdim=True)
-    abs_r_next = abs_r_next - abs_r_next.mean(dim=0, keepdim=True)
-    num = (r_t * abs_r_next).mean(dim=0)
-    denom = r_t.std(dim=0) * abs_r_next.std(dim=0) + 1e-8
-    return num / denom
+def _acf_abs_pooled(x: torch.Tensor, max_lag: int = 40) -> torch.Tensor:
+    """ACF of |pooled series| at lags 1..max_lag. Returns (max_lag,)."""
+    s = _pool(x).abs()
+    s = s - s.mean()
+    var = (s ** 2).mean() + 1e-8
+    return torch.stack([(s[lag:] * s[:-lag]).mean() / var
+                        for lag in range(1, max_lag + 1)])
 
 
-def _kurtosis(x: torch.Tensor) -> torch.Tensor:
-    """Excess kurtosis per feature. Returns (D,)."""
-    flat = _flat_time(x)
-    m = flat.mean(dim=0, keepdim=True)
-    s = flat.std(dim=0, keepdim=True) + 1e-8
-    z = (flat - m) / s
-    return (z ** 4).mean(dim=0) - 3.0
+def _acf_raw_pooled(x: torch.Tensor, max_lag: int = 20) -> torch.Tensor:
+    """ACF of raw pooled returns (we want this ≈ 0 — targets test 6)."""
+    s = _pool(x)
+    s = s - s.mean()
+    var = (s ** 2).mean() + 1e-8
+    return torch.stack([(s[lag:] * s[:-lag]).mean() / var
+                        for lag in range(1, max_lag + 1)])
 
 
-def _q90_abs(x: torch.Tensor) -> torch.Tensor:
-    """90% quantile of |x| per feature. Returns (D,)."""
-    flat = _flat_time(x).abs()
-    return torch.quantile(flat, 0.9, dim=0)
+def _leverage_pooled(x: torch.Tensor) -> torch.Tensor:
+    """corr(r_t, |r_{t+1}|) on the pooled series — matches test 3's input."""
+    s = _pool(x)
+    r_t = s[:-1]
+    abs_r_next = s[1:].abs()
+    r_t = r_t - r_t.mean()
+    abs_r_next = abs_r_next - abs_r_next.mean()
+    return (r_t * abs_r_next).mean() / (r_t.std() * abs_r_next.std() + 1e-8)
+
+
+def _kurtosis_pooled(x: torch.Tensor) -> torch.Tensor:
+    """Excess kurtosis on the pooled series."""
+    s = _pool(x)
+    m = s.mean()
+    sd = s.std() + 1e-8
+    z = (s - m) / sd
+    return (z ** 4).mean() - 3.0
+
+
+def _q90_abs_pooled(x: torch.Tensor) -> torch.Tensor:
+    """90% quantile of |pooled|."""
+    return torch.quantile(_pool(x).abs(), 0.9)
 
 
 def _corr_matrix(x: torch.Tensor) -> torch.Tensor:
@@ -141,10 +149,11 @@ class TimeGANModel(BaseGenerativeModel):
         ae_ratio: float = 0.3,
         sup_ratio: float = 0.2,
         n_gen_steps: int = 2,
-        w_acf: float = 2.0,
-        w_lev: float = 1.0,
+        w_acf: float = 4.0,
+        w_lev: float = 0.3,
         w_tail: float = 1.0,
-        w_corr: float = 1.0,
+        w_corr: float = 3.0,
+        w_acf_raw: float = 2.0,
         d_skip_hi: float = 0.9,
         d_skip_lo: float = 0.1,
         d_warmup_epochs: int = 10,
@@ -270,27 +279,30 @@ class TimeGANModel(BaseGenerativeModel):
 
                     # --- stylized-fact auxiliary losses ---
                     with torch.no_grad():
-                        acf_real = _acf_abs(batch)
-                        lev_real = _leverage_corr(batch)
-                        kurt_real = _kurtosis(batch)
-                        q90_real = _q90_abs(batch)
+                        acf_real  = _acf_abs_pooled(batch)
+                        lev_real  = _leverage_pooled(batch)
+                        kurt_real = _kurtosis_pooled(batch)
+                        q90_real  = _q90_abs_pooled(batch)
                         corr_real = _corr_matrix(batch)
 
-                    L_acf  = mse(_acf_abs(x_hat),       acf_real)
-                    L_lev  = mse(_leverage_corr(x_hat), lev_real)
-                    L_tail = (mse(_kurtosis(x_hat), kurt_real) +
-                              mse(_q90_abs(x_hat),  q90_real))
-                    L_corr = mse(_corr_matrix(x_hat),   corr_real)
+                    L_acf     = mse(_acf_abs_pooled(x_hat),  acf_real)
+                    L_lev     = (_leverage_pooled(x_hat) - lev_real) ** 2
+                    L_tail    = ((_kurtosis_pooled(x_hat) - kurt_real) ** 2 +
+                                 (_q90_abs_pooled(x_hat)  - q90_real)  ** 2)
+                    L_corr    = mse(_corr_matrix(x_hat), corr_real)
+                    # Push raw-return ACF toward zero (test 6)
+                    L_acf_raw = (_acf_raw_pooled(x_hat) ** 2).mean()
 
                     g_loss = (
                         g_adv_h
                         + gamma * g_adv_e
                         + 10.0 * torch.sqrt(g_sup_loss + 1e-8)
                         + 10.0 * torch.sqrt(g_moment   + 1e-8)
-                        + w_acf  * L_acf
-                        + w_lev  * L_lev
-                        + w_tail * L_tail
-                        + w_corr * L_corr
+                        + w_acf      * L_acf
+                        + w_lev      * L_lev
+                        + w_tail     * L_tail
+                        + w_corr     * L_corr
+                        + w_acf_raw  * L_acf_raw
                     )
                     opt_g.zero_grad()
                     g_loss.backward()
