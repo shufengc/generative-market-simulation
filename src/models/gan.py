@@ -1,14 +1,22 @@
 """
-TimeGAN-inspired model for financial time series generation.
+TimeGAN for financial time series generation.
 
-Architecture:
-  - Embedding network: maps real space to latent space
-  - Recovery network: maps latent space back to real space
-  - Generator: produces latent sequences from noise
-  - Discriminator: distinguishes real vs fake latent sequences
-  - Supervisor: captures temporal dynamics in latent space
+Architecture (Yoon et al., NeurIPS 2019):
+  Embedder  : X -> H  (real space to latent space)
+  Recovery  : H -> X  (latent back to real)
+  Generator : Z -> E_hat  (noise to raw latent)
+  Supervisor: H -> H  (captures temporal dynamics in latent space)
+  Discriminator: H -> scalar  (real vs fake latent)
 
-Reference: Yoon et al., "Time-series Generative Adversarial Networks", NeurIPS 2019
+Training phases:
+  Phase 1 — Autoencoder pre-training (Embedder + Recovery)
+  Phase 2 — Supervisor pre-training  (Supervisor on real latents)
+  Phase 3 — Joint adversarial training:
+             (a) Generator + Supervisor update
+             (b) Discriminator update  (on both H_hat and E_hat)
+             (c) Embedder + Recovery update  (reconstruction + supervisor)
+
+Loss: Wasserstein + Gradient Penalty (replaces unstable BCE+GP mix).
 """
 
 from __future__ import annotations
@@ -27,16 +35,13 @@ from src.models.base_model import BaseGenerativeModel
 
 
 class RNNBlock(nn.Module):
-    """GRU-based sequence model used across all TimeGAN components."""
+    """GRU-based sequence model shared across all TimeGAN components."""
 
     def __init__(self, input_dim: int, hidden_dim: int, output_dim: int,
-                 n_layers: int = 2, use_spectral_norm: bool = False):
+                 n_layers: int = 2):
         super().__init__()
         self.gru = nn.GRU(input_dim, hidden_dim, n_layers, batch_first=True)
-        fc = nn.Linear(hidden_dim, output_dim)
-        if use_spectral_norm:
-            fc = nn.utils.spectral_norm(fc)
-        self.fc = fc
+        self.fc = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h, _ = self.gru(x)
@@ -44,7 +49,7 @@ class RNNBlock(nn.Module):
 
 
 class TimeGANModel(BaseGenerativeModel):
-    """TimeGAN for financial time series generation with improved stability."""
+    """TimeGAN for multi-asset financial time series."""
 
     def __init__(
         self,
@@ -61,23 +66,26 @@ class TimeGANModel(BaseGenerativeModel):
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
 
-        self.embedder = RNNBlock(n_features, hidden_dim, latent_dim, n_layers).to(self.device)
-        self.recovery = RNNBlock(latent_dim, hidden_dim, n_features, n_layers).to(self.device)
-        self.generator = RNNBlock(n_features, hidden_dim, latent_dim, n_layers).to(self.device)
-        self.supervisor = RNNBlock(latent_dim, hidden_dim, latent_dim, n_layers).to(self.device)
-        self.discriminator = RNNBlock(
-            latent_dim, hidden_dim, 1, n_layers, use_spectral_norm=True
-        ).to(self.device)
+        self.embedder     = RNNBlock(n_features,  hidden_dim, latent_dim, n_layers).to(self.device)
+        self.recovery     = RNNBlock(latent_dim,  hidden_dim, n_features, n_layers).to(self.device)
+        self.generator    = RNNBlock(latent_dim,  hidden_dim, latent_dim, n_layers).to(self.device)
+        self.supervisor   = RNNBlock(latent_dim,  hidden_dim, latent_dim, n_layers).to(self.device)
+        self.discriminator = RNNBlock(latent_dim, hidden_dim, 1,          n_layers).to(self.device)
 
-    def _random_noise(self, batch_size: int, seq_len: int) -> torch.Tensor:
-        return torch.randn(batch_size, seq_len, self.n_features, device=self.device)
+    def _noise(self, batch_size: int, seq_len: int) -> torch.Tensor:
+        """Gaussian noise in latent space dimension."""
+        return torch.randn(batch_size, seq_len, self.latent_dim, device=self.device)
 
     def _gradient_penalty(self, real_h: torch.Tensor, fake_h: torch.Tensor) -> torch.Tensor:
-        """Compute gradient penalty for WGAN-GP style regularization."""
+        """WGAN-GP gradient penalty between real and fake latent sequences.
+        CuDNN is disabled during the forward pass because double-backward
+        is not supported for CuDNN RNNs.
+        """
         B = real_h.shape[0]
         alpha = torch.rand(B, 1, 1, device=self.device)
         interp = (alpha * real_h + (1 - alpha) * fake_h).requires_grad_(True)
-        d_interp = self.discriminator(interp)
+        with torch.backends.cudnn.flags(enabled=False):
+            d_interp = self.discriminator(interp)
         grad = torch.autograd.grad(
             outputs=d_interp, inputs=interp,
             grad_outputs=torch.ones_like(d_interp),
@@ -86,37 +94,61 @@ class TimeGANModel(BaseGenerativeModel):
         grad_norm = grad.reshape(B, -1).norm(2, dim=1)
         return ((grad_norm - 1) ** 2).mean()
 
-    def train(self, data: np.ndarray, epochs: int = 200, batch_size: int = 64,
-              lr: float = 1e-3, gp_weight: float = 10.0, **kwargs) -> dict:
+    def train(
+        self,
+        data: np.ndarray,
+        epochs: int = 200,
+        batch_size: int = 64,
+        lr: float = 1e-4,
+        gp_weight: float = 10.0,
+        gamma: float = 1.0,
+        ae_ratio: float = 0.4,
+        sup_ratio: float = 0.2,
+        **kwargs,
+    ) -> dict:
+        """
+        Three-phase TimeGAN training.
+
+        Args:
+            epochs:    Total training epochs.
+            ae_ratio:  Fraction of epochs for autoencoder pre-training (default 0.4).
+            sup_ratio: Fraction of epochs for supervisor pre-training  (default 0.2).
+                       Joint phase gets the remaining 1 - ae_ratio - sup_ratio.
+            gamma:     Weight for discriminating raw generator output E_hat.
+            gp_weight: Gradient penalty coefficient.
+        """
         x_tensor = torch.tensor(data, dtype=torch.float32)
         if x_tensor.ndim == 2:
             x_tensor = x_tensor.unsqueeze(-1)
-
         dataset = TensorDataset(x_tensor)
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        loader  = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-        opt_ae = torch.optim.Adam(
-            list(self.embedder.parameters()) + list(self.recovery.parameters()), lr=lr
-        )
-        opt_sup = torch.optim.Adam(self.supervisor.parameters(), lr=lr)
-        opt_g = torch.optim.Adam(
-            list(self.generator.parameters()) + list(self.supervisor.parameters()), lr=lr
-        )
-        opt_d = torch.optim.Adam(self.discriminator.parameters(), lr=lr * 0.5)
         mse = nn.MSELoss()
-        bce = nn.BCEWithLogitsLoss()
+
+        opt_ae  = torch.optim.Adam(
+            list(self.embedder.parameters()) + list(self.recovery.parameters()), lr=lr)
+        opt_sup = torch.optim.Adam(self.supervisor.parameters(), lr=lr)
+        opt_g   = torch.optim.Adam(
+            list(self.generator.parameters()) + list(self.supervisor.parameters()), lr=lr)
+        opt_d   = torch.optim.Adam(self.discriminator.parameters(), lr=lr * 0.5)
 
         losses = {"ae": [], "sup": [], "g": [], "d": []}
 
-        ae_epochs = epochs // 3
+        ae_epochs    = max(1, int(epochs * ae_ratio))
+        sup_epochs   = max(1, int(epochs * sup_ratio))
+        joint_epochs = max(1, epochs - ae_epochs - sup_epochs)
+
+        # ------------------------------------------------------------------
+        # Phase 1: Autoencoder pre-training (Embedder + Recovery)
+        # ------------------------------------------------------------------
         print(f"  Phase 1: Autoencoder pre-training ({ae_epochs} epochs)")
         for epoch in range(ae_epochs):
-            epoch_loss = 0
+            epoch_loss = 0.0
             for (batch,) in loader:
                 batch = batch.to(self.device)
-                h = self.embedder(batch)
-                x_hat = self.recovery(h)
-                loss = mse(x_hat, batch)
+                h      = self.embedder(batch)
+                x_hat  = self.recovery(h)
+                loss   = 10 * torch.sqrt(mse(x_hat, batch) + 1e-8)
                 opt_ae.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(
@@ -125,16 +157,18 @@ class TimeGANModel(BaseGenerativeModel):
                 epoch_loss += loss.item()
             losses["ae"].append(epoch_loss / len(loader))
 
-        sup_epochs = epochs // 3
+        # ------------------------------------------------------------------
+        # Phase 2: Supervisor pre-training (learns temporal dynamics)
+        # ------------------------------------------------------------------
         print(f"  Phase 2: Supervisor pre-training ({sup_epochs} epochs)")
         for epoch in range(sup_epochs):
-            epoch_loss = 0
+            epoch_loss = 0.0
             for (batch,) in loader:
                 batch = batch.to(self.device)
                 with torch.no_grad():
                     h = self.embedder(batch)
                 h_sup = self.supervisor(h[:, :-1, :])
-                loss = mse(h_sup, h[:, 1:, :])
+                loss  = mse(h_sup, h[:, 1:, :])
                 opt_sup.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.supervisor.parameters(), 1.0)
@@ -142,64 +176,101 @@ class TimeGANModel(BaseGenerativeModel):
                 epoch_loss += loss.item()
             losses["sup"].append(epoch_loss / len(loader))
 
-        joint_epochs = epochs - ae_epochs - sup_epochs
+        # ------------------------------------------------------------------
+        # Phase 3: Joint adversarial training
+        # ------------------------------------------------------------------
         print(f"  Phase 3: Joint adversarial training ({joint_epochs} epochs)")
+        sched_g = torch.optim.lr_scheduler.CosineAnnealingLR(opt_g, joint_epochs, eta_min=lr * 0.1)
+        sched_d = torch.optim.lr_scheduler.CosineAnnealingLR(opt_d, joint_epochs, eta_min=lr * 0.05)
+
         for epoch in range(joint_epochs):
-            g_loss_total, d_loss_total = 0, 0
+            g_loss_total, d_loss_total = 0.0, 0.0
+
             for (batch,) in loader:
                 batch = batch.to(self.device)
-                B = batch.shape[0]
-                noise = self._random_noise(B, self.seq_len)
+                B     = batch.shape[0]
 
-                # --- Train Generator ---
-                h_real = self.embedder(batch)
-                h_fake_raw = self.generator(noise)
-                h_fake = self.supervisor(h_fake_raw)
-                x_fake = self.recovery(h_fake)
+                # ---- (a) Generator + Supervisor update ----------------
+                noise  = self._noise(B, self.seq_len)
+                e_hat  = self.generator(noise)          # raw latent from noise
+                h_hat  = self.supervisor(e_hat)         # supervised latent
+                x_hat  = self.recovery(h_hat)
 
-                d_fake = self.discriminator(h_fake)
-                g_adv_loss = bce(d_fake, torch.ones_like(d_fake))
+                # Wasserstein adversarial losses (higher = more real)
+                g_adv_h = -self.discriminator(h_hat).mean()     # on supervised latent
+                g_adv_e = -self.discriminator(e_hat).mean()     # on raw latent
 
-                h_sup_real = self.supervisor(h_real[:, :-1, :])
-                g_sup_loss = mse(h_sup_real, h_real[:, 1:, :].detach())
-
-                # Moment matching on mean and variance
-                g_moment = (
-                    torch.abs(x_fake.mean(dim=0) - batch.mean(dim=0)).mean() +
-                    torch.abs(x_fake.std(dim=0) - batch.std(dim=0)).mean()
+                # Supervisor loss on real latent sequences
+                with torch.no_grad():
+                    h_real = self.embedder(batch)
+                g_sup_loss = mse(
+                    self.supervisor(h_real[:, :-1, :]),
+                    h_real[:, 1:, :],
                 )
 
-                g_loss = g_adv_loss + 10 * g_sup_loss + 1.0 * g_moment
+                # Moment matching (mean + std per feature per timestep)
+                g_moment = (
+                    torch.abs(x_hat.mean(dim=0) - batch.mean(dim=0)).mean() +
+                    torch.abs(x_hat.std(dim=0)  - batch.std(dim=0)).mean()
+                )
+
+                g_loss = (
+                    g_adv_h
+                    + gamma * g_adv_e
+                    + 10.0 * torch.sqrt(g_sup_loss  + 1e-8)
+                    + 10.0 * torch.sqrt(g_moment    + 1e-8)
+                )
                 opt_g.zero_grad()
                 g_loss.backward()
                 nn.utils.clip_grad_norm_(
                     list(self.generator.parameters()) + list(self.supervisor.parameters()), 1.0)
                 opt_g.step()
-                g_loss_total += g_loss.item()
 
-                # --- Train Discriminator ---
+                # ---- (b) Discriminator update --------------------------
                 with torch.no_grad():
                     h_real_d = self.embedder(batch)
-                    h_fake_d = self.supervisor(self.generator(self._random_noise(B, self.seq_len)))
+                    e_hat_d  = self.generator(self._noise(B, self.seq_len))
+                    h_hat_d  = self.supervisor(e_hat_d)
 
-                d_real = self.discriminator(h_real_d)
-                d_fake = self.discriminator(h_fake_d)
-                d_loss = bce(d_real, torch.ones_like(d_real)) + bce(d_fake, torch.zeros_like(d_fake))
+                # Wasserstein loss: real high, fake low
+                d_real    = self.discriminator(h_real_d).mean()
+                d_fake_h  = self.discriminator(h_hat_d).mean()
+                d_fake_e  = self.discriminator(e_hat_d).mean()
 
-                # Gradient penalty for stability
-                gp = self._gradient_penalty(h_real_d.detach(), h_fake_d.detach())
-                d_loss = d_loss + gp_weight * gp
+                gp = self._gradient_penalty(h_real_d, h_hat_d)
 
+                d_loss = (d_fake_h + gamma * d_fake_e) - d_real + gp_weight * gp
                 opt_d.zero_grad()
                 d_loss.backward()
                 nn.utils.clip_grad_norm_(self.discriminator.parameters(), 1.0)
                 opt_d.step()
+
+                # ---- (c) Embedder + Recovery update -------------------
+                # Jointly fine-tune with reconstruction + supervisor loss.
+                h_e     = self.embedder(batch)
+                x_tilde = self.recovery(h_e)
+                h_sup_e = self.supervisor(h_e[:, :-1, :])
+
+                e_recon = mse(x_tilde, batch)
+                e_sup   = mse(h_sup_e, h_e[:, 1:, :].detach())
+                e_loss  = torch.sqrt(e_recon + 1e-8) + 0.1 * e_sup
+
+                opt_ae.zero_grad()
+                e_loss.backward()
+                nn.utils.clip_grad_norm_(
+                    list(self.embedder.parameters()) + list(self.recovery.parameters()), 1.0)
+                opt_ae.step()
+
+                g_loss_total += g_loss.item()
                 d_loss_total += d_loss.item()
 
+            sched_g.step()
+            sched_d.step()
             losses["g"].append(g_loss_total / len(loader))
             losses["d"].append(d_loss_total / len(loader))
             if (epoch + 1) % 20 == 0:
-                print(f"  Joint Epoch {epoch+1}/{joint_epochs} | G={losses['g'][-1]:.4f} D={losses['d'][-1]:.4f}")
+                print(f"  Joint {epoch+1}/{joint_epochs} | "
+                      f"G={losses['g'][-1]:.4f}  D={losses['d'][-1]:.4f}")
 
         self.is_trained = True
         return losses
@@ -208,27 +279,26 @@ class TimeGANModel(BaseGenerativeModel):
     def generate(self, n_samples: int, seq_len: int | None = None, **kwargs) -> np.ndarray:
         if seq_len is None:
             seq_len = self.seq_len
-
         self.generator.eval()
         self.supervisor.eval()
         self.recovery.eval()
 
-        noise = self._random_noise(n_samples, seq_len)
-        h_fake = self.supervisor(self.generator(noise))
-        x_fake = self.recovery(h_fake)
-        return x_fake.cpu().numpy()
+        noise = self._noise(n_samples, seq_len)
+        h_hat = self.supervisor(self.generator(noise))
+        x_hat = self.recovery(h_hat)
+        return x_hat.cpu().numpy()
 
     def save(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         torch.save({
-            "embedder": self.embedder.state_dict(),
-            "recovery": self.recovery.state_dict(),
-            "generator": self.generator.state_dict(),
-            "supervisor": self.supervisor.state_dict(),
+            "embedder":      self.embedder.state_dict(),
+            "recovery":      self.recovery.state_dict(),
+            "generator":     self.generator.state_dict(),
+            "supervisor":    self.supervisor.state_dict(),
             "discriminator": self.discriminator.state_dict(),
             "config": {
                 "n_features": self.n_features,
-                "seq_len": self.seq_len,
+                "seq_len":    self.seq_len,
                 "hidden_dim": self.hidden_dim,
                 "latent_dim": self.latent_dim,
             },
@@ -246,12 +316,13 @@ class TimeGANModel(BaseGenerativeModel):
 
 if __name__ == "__main__":
     from src.utils.config import DEFAULT_DEVICE
+
     parser = argparse.ArgumentParser(description="TimeGAN for financial time series")
-    parser.add_argument("--train", action="store_true")
-    parser.add_argument("--generate", action="store_true")
-    parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument("--train",     action="store_true")
+    parser.add_argument("--generate",  action="store_true")
+    parser.add_argument("--epochs",    type=int, default=200)
     parser.add_argument("--n-samples", type=int, default=1000)
-    parser.add_argument("--data-dir", default=None)
+    parser.add_argument("--data-dir",  default=None)
     parser.add_argument("--checkpoint", default="checkpoints/timegan.pt")
     args = parser.parse_args()
 
@@ -261,7 +332,8 @@ if __name__ == "__main__":
         windows = np.load(os.path.join(data_dir, "windows.npy"))
         print(f"Training TimeGAN on {windows.shape}")
         model = TimeGANModel(
-            n_features=windows.shape[2], seq_len=windows.shape[1],
+            n_features=windows.shape[2],
+            seq_len=windows.shape[1],
             device=DEFAULT_DEVICE,
         )
         model.train(windows, epochs=args.epochs)
@@ -270,7 +342,8 @@ if __name__ == "__main__":
     if args.generate:
         windows = np.load(os.path.join(data_dir, "windows.npy"))
         model = TimeGANModel(
-            n_features=windows.shape[2], seq_len=windows.shape[1],
+            n_features=windows.shape[2],
+            seq_len=windows.shape[1],
             device=DEFAULT_DEVICE,
         )
         model.load(args.checkpoint)
