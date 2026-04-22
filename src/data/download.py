@@ -48,6 +48,10 @@ FRED_SERIES = {
     "FEDFUNDS": "Fed Funds Rate",
 }
 
+# Shared default when CLI / run_pipeline do not pass --fred-key.
+# Prefer FRED_API_KEY in the environment; do not commit real keys to public repos.
+DEFAULT_FRED_KEY = "a768db74187e1a65c2e080c6c5d025c1"
+
 
 def download_market_data(
     start: str = "2005-01-01",
@@ -135,7 +139,7 @@ def main():
     parser.add_argument("--start", default="2005-01-01")
     parser.add_argument("--end", default=None)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--fred-key", default="a768db74187e1a65c2e080c6c5d025c1")
+    parser.add_argument("--fred-key", default=DEFAULT_FRED_KEY)
     args = parser.parse_args()
 
     prices = download_market_data(args.start, args.end, args.output_dir)
