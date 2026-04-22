@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--start", default="2005-01-01")
     parser.add_argument("--end", default=None)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--fred-key", default=None)
+    parser.add_argument("--fred-key", default="a768db74187e1a65c2e080c6c5d025c1")
     args = parser.parse_args()
 
     prices = download_market_data(args.start, args.end, args.output_dir)
