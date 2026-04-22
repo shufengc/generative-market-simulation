@@ -104,18 +104,23 @@ class TimeGANModel(BaseGenerativeModel):
         gamma: float = 1.0,
         ae_ratio: float = 0.4,
         sup_ratio: float = 0.2,
+        n_gen_steps: int = 2,
+        d_margin: float = 1.5,
         **kwargs,
     ) -> dict:
         """
         Three-phase TimeGAN training.
 
         Args:
-            epochs:    Total training epochs.
-            ae_ratio:  Fraction of epochs for autoencoder pre-training (default 0.4).
-            sup_ratio: Fraction of epochs for supervisor pre-training  (default 0.2).
-                       Joint phase gets the remaining 1 - ae_ratio - sup_ratio.
-            gamma:     Weight for discriminating raw generator output E_hat.
-            gp_weight: Gradient penalty coefficient.
+            epochs:      Total training epochs.
+            ae_ratio:    Fraction of epochs for autoencoder pre-training.
+            sup_ratio:   Fraction of epochs for supervisor pre-training.
+            gamma:       Weight for discriminating raw generator output E_hat.
+            gp_weight:   Gradient penalty coefficient.
+            n_gen_steps: Generator updates per outer iteration (default 2 gives G more
+                         chances to catch up to D, standard trick for TimeGAN+Wasserstein).
+            d_margin:    Skip D update when d_real - d_fake > d_margin. Prevents the
+                         discriminator from running away once it dominates.
         """
         x_tensor = torch.tensor(data, dtype=torch.float32)
         if x_tensor.ndim == 2:
@@ -130,7 +135,7 @@ class TimeGANModel(BaseGenerativeModel):
         opt_sup = torch.optim.Adam(self.supervisor.parameters(), lr=lr)
         opt_g   = torch.optim.Adam(
             list(self.generator.parameters()) + list(self.supervisor.parameters()), lr=lr)
-        opt_d   = torch.optim.Adam(self.discriminator.parameters(), lr=lr * 0.5)
+        opt_d   = torch.optim.Adam(self.discriminator.parameters(), lr=lr * 0.2)
 
         losses = {"ae": [], "sup": [], "g": [], "d": []}
 
@@ -185,65 +190,71 @@ class TimeGANModel(BaseGenerativeModel):
 
         for epoch in range(joint_epochs):
             g_loss_total, d_loss_total = 0.0, 0.0
+            d_skipped = 0
 
             for (batch,) in loader:
                 batch = batch.to(self.device)
                 B     = batch.shape[0]
 
-                # ---- (a) Generator + Supervisor update ----------------
-                noise  = self._noise(B, self.seq_len)
-                e_hat  = self.generator(noise)          # raw latent from noise
-                h_hat  = self.supervisor(e_hat)         # supervised latent
-                x_hat  = self.recovery(h_hat)
+                # ---- (a) Generator + Supervisor update (n_gen_steps times) ----
+                g_loss_val = 0.0
+                for _ in range(n_gen_steps):
+                    noise  = self._noise(B, self.seq_len)
+                    e_hat  = self.generator(noise)
+                    h_hat  = self.supervisor(e_hat)
+                    x_hat  = self.recovery(h_hat)
 
-                # Wasserstein adversarial losses (higher = more real)
-                g_adv_h = -self.discriminator(h_hat).mean()     # on supervised latent
-                g_adv_e = -self.discriminator(e_hat).mean()     # on raw latent
+                    g_adv_h = -self.discriminator(h_hat).mean()
+                    g_adv_e = -self.discriminator(e_hat).mean()
 
-                # Supervisor loss on real latent sequences
-                with torch.no_grad():
-                    h_real = self.embedder(batch)
-                g_sup_loss = mse(
-                    self.supervisor(h_real[:, :-1, :]),
-                    h_real[:, 1:, :],
-                )
+                    with torch.no_grad():
+                        h_real = self.embedder(batch)
+                    g_sup_loss = mse(
+                        self.supervisor(h_real[:, :-1, :]),
+                        h_real[:, 1:, :],
+                    )
 
-                # Moment matching (mean + std per feature per timestep)
-                g_moment = (
-                    torch.abs(x_hat.mean(dim=0) - batch.mean(dim=0)).mean() +
-                    torch.abs(x_hat.std(dim=0)  - batch.std(dim=0)).mean()
-                )
+                    g_moment = (
+                        torch.abs(x_hat.mean(dim=0) - batch.mean(dim=0)).mean() +
+                        torch.abs(x_hat.std(dim=0)  - batch.std(dim=0)).mean()
+                    )
 
-                g_loss = (
-                    g_adv_h
-                    + gamma * g_adv_e
-                    + 10.0 * torch.sqrt(g_sup_loss  + 1e-8)
-                    + 10.0 * torch.sqrt(g_moment    + 1e-8)
-                )
-                opt_g.zero_grad()
-                g_loss.backward()
-                nn.utils.clip_grad_norm_(
-                    list(self.generator.parameters()) + list(self.supervisor.parameters()), 1.0)
-                opt_g.step()
+                    g_loss = (
+                        g_adv_h
+                        + gamma * g_adv_e
+                        + 10.0 * torch.sqrt(g_sup_loss  + 1e-8)
+                        + 10.0 * torch.sqrt(g_moment    + 1e-8)
+                    )
+                    opt_g.zero_grad()
+                    g_loss.backward()
+                    nn.utils.clip_grad_norm_(
+                        list(self.generator.parameters()) + list(self.supervisor.parameters()), 1.0)
+                    opt_g.step()
+                    g_loss_val = g_loss.item()
 
-                # ---- (b) Discriminator update --------------------------
+                # ---- (b) Discriminator update (with margin-based skip) --------
                 with torch.no_grad():
                     h_real_d = self.embedder(batch)
                     e_hat_d  = self.generator(self._noise(B, self.seq_len))
                     h_hat_d  = self.supervisor(e_hat_d)
 
-                # Wasserstein loss: real high, fake low
                 d_real    = self.discriminator(h_real_d).mean()
                 d_fake_h  = self.discriminator(h_hat_d).mean()
                 d_fake_e  = self.discriminator(e_hat_d).mean()
 
-                gp = self._gradient_penalty(h_real_d, h_hat_d)
-
-                d_loss = (d_fake_h + gamma * d_fake_e) - d_real + gp_weight * gp
-                opt_d.zero_grad()
-                d_loss.backward()
-                nn.utils.clip_grad_norm_(self.discriminator.parameters(), 1.0)
-                opt_d.step()
+                # Skip D update if it's already winning by too much
+                margin = (d_real - 0.5 * (d_fake_h + d_fake_e)).item()
+                if margin > d_margin:
+                    d_skipped += 1
+                    d_loss_val = (d_fake_h + gamma * d_fake_e - d_real).item()
+                else:
+                    gp = self._gradient_penalty(h_real_d, h_hat_d)
+                    d_loss = (d_fake_h + gamma * d_fake_e) - d_real + gp_weight * gp
+                    opt_d.zero_grad()
+                    d_loss.backward()
+                    nn.utils.clip_grad_norm_(self.discriminator.parameters(), 1.0)
+                    opt_d.step()
+                    d_loss_val = d_loss.item()
 
                 # ---- (c) Embedder + Recovery update -------------------
                 # Jointly fine-tune with reconstruction + supervisor loss.
@@ -261,8 +272,8 @@ class TimeGANModel(BaseGenerativeModel):
                     list(self.embedder.parameters()) + list(self.recovery.parameters()), 1.0)
                 opt_ae.step()
 
-                g_loss_total += g_loss.item()
-                d_loss_total += d_loss.item()
+                g_loss_total += g_loss_val
+                d_loss_total += d_loss_val
 
             sched_g.step()
             sched_d.step()
@@ -270,7 +281,8 @@ class TimeGANModel(BaseGenerativeModel):
             losses["d"].append(d_loss_total / len(loader))
             if (epoch + 1) % 20 == 0:
                 print(f"  Joint {epoch+1}/{joint_epochs} | "
-                      f"G={losses['g'][-1]:.4f}  D={losses['d'][-1]:.4f}")
+                      f"G={losses['g'][-1]:.4f}  D={losses['d'][-1]:.4f}  "
+                      f"D_skip={d_skipped}/{len(loader)}")
 
         self.is_trained = True
         return losses

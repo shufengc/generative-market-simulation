@@ -187,6 +187,7 @@ def step_evaluate(trained_models: dict, data_dir: str, n_samples: int = 500):
         print(f"\n--- Evaluating {name.upper()} ---")
         try:
             synthetic = model.generate(n_samples)
+            np.save(os.path.join(data_dir, f"generated_{name}.npy"), synthetic)
             sf = run_all_tests(synthetic, real_returns=real_sample)
             n_pass = count_passes(sf)
             metrics = full_evaluation(windows[:n_samples], synthetic[:n_samples])
