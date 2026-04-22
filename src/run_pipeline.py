@@ -248,6 +248,8 @@ def main():
     parser.add_argument("--n-samples", type=int, default=2000)
     parser.add_argument("--data-dir", default=DATA_DIR)
     parser.add_argument("--fred-key", default=None)
+    parser.add_argument("--seed", type=int, default=SEED,
+                        help="Random seed for training (default from config)")
     args = parser.parse_args()
 
     if args.quick:
@@ -260,8 +262,8 @@ def main():
         stride = 1
 
     device = DEFAULT_DEVICE
-    print(f"Device: {device}")
-    set_seed()
+    print(f"Device: {device}  Seed: {args.seed}")
+    set_seed(args.seed)
 
     # Step 1: Download
     if not args.skip_download:
