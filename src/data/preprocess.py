@@ -128,7 +128,6 @@ def prepare_dataset(
 
     return {
         "returns_df": returns_df,
-        "prices_df": prices,
         "windows": windows,
         "scaler_params": {"mean": mu, "std": sigma},
         "asset_names": asset_names,
