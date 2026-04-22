@@ -72,7 +72,7 @@ Yahoo Finance + FRED API
 Models are presented in the project order used by the demo:
 
 1. **DDPM**  
-   Diffusion-based generator with 1-D denoising networks and classifier-free conditioning. This is the main research line, with both baseline and improved variants.
+   Diffusion-based generator with 1-D denoising networks and classifier-free conditioning. This is the main research line, with both baseline and improved variants (v-prediction + Student-t forward process).
 
 2. **TimeGAN**  
    Adversarial sequence model with embedding/supervisor/generator-discriminator stages. It serves as the deep GAN baseline for temporal realism.
@@ -88,100 +88,82 @@ Models are presented in the project order used by the demo:
 
 ### Cross-Model Comparison Summary
 
-| Model | Stylized Facts (out of 6) | MMD | Wasserstein-1 | Discriminative Score | Key Takeaway |
-|-------|:---------------------------:|:---:|:-------------:|:--------------------:|--------------|
-| **DDPM (Improved)** | **5.0 / 6** | 0.021 | 0.153 | 0.78 | Best DDPM configuration for stylized-fact coverage and consistency |
-| **TimeGAN** | -- | -- | -- | -- | Included as adversarial temporal baseline in the shared pipeline |
-| **VAE** | -- | -- | -- | -- | Included as compact latent baseline; useful for stability and ablation completeness |
-| **GARCH** | -- | -- | -- | -- | Traditional statistical baseline for sanity-check comparisons |
-| **RealNVP (NormFlow)** | **5.0 / 6** | **0.005** | **0.085** | 0.74 | Strongest distributional metrics baseline; key head-to-head comparator for DDPM |
+Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows with stride=1 (5,293 windows). Evaluated with an updated stylized facts framework (Hill estimator for fat tails, GARCH(1,1) for volatility clustering, Hurst R/S for long memory, max-eigenvalue for cross-asset correlations).
 
-- DDPM improved and RealNVP both reach high stylized-fact coverage, but RealNVP remains stronger on MMD/W1.
-- DDPM improved is the project's main diffusion result and best DDPM-line model for final comparisons.
-- TimeGAN, VAE, and GARCH are retained to cover GAN, variational, and classical statistical modeling paradigms.
-- Final interpretation should consider both stylized-fact pass rate and distributional metrics jointly.
+| Model | Stylized Facts | MMD | Wasserstein-1 | Disc. Score | Corr. Dist. |
+|-------|:--------------:|:---:|:-------------:|:-----------:|:-----------:|
+| **DDPM (v-pred + Student-t)** | **5 / 6** | **0.006** | **0.111** | 0.85 | **1.79** |
+| **DDPM (v-prediction)** | **5 / 6** | 0.037 | 0.148 | 0.93 | 1.87 |
+| **NormFlow (RealNVP)** | **5 / 6** | 0.052 | 0.251 | **0.54** | 8.03 |
+| **TimeGAN** | 4 / 6 | 0.065 | 0.303 | 0.89 | 7.77 |
+| **GARCH** | 4 / 6 | 0.281 | 0.440 | 1.00 | 4.11 |
+| **VAE** | 3 / 6 | 0.415 | 0.466 | 1.00 | 4.50 |
 
-## Results Figures (project/results)
+*DDPM results: 3-seed average (42, 123, 456), 400 epochs, from `run_ddpm_ablation.py`. Other models: single-run from `cross_model_analysis.py` (see `results/cross_model/`). Multi-seed re-runs for all models are in progress.*
 
-### `comparison_table.png`
+- DDPM (v-pred + Student-t) achieves the best MMD, Wasserstein-1, and correlation distance across all models.
+- NormFlow has the best discriminative score (0.54), meaning its synthetic data is hardest for a classifier to distinguish from real data.
+- All models except TimeGAN and GARCH fail the no-raw-autocorrelation test (SF6).
+- Full cross-model analysis with bootstrap confidence intervals and per-regime breakdowns: `results/cross_model/cross_model_report.txt`.
+
+## Results Figures
+
+### Cross-Model Analysis
+
+<p align="center">
+  <img src="results/cross_model/radar_chart.png" width="700" alt="Radar chart comparing models across metrics">
+</p>
+
 <p align="center">
   <img src="results/comparison_table.png" width="700" alt="Overall comparison table across models and metrics">
 </p>
 
-This figure summarizes headline metrics in one place and is the quickest way to compare global model ranking.
-
-### `stylized_facts_heatmap.png`
 <p align="center">
   <img src="results/stylized_facts_heatmap.png" width="700" alt="Stylized facts heatmap for model pass/fail behavior">
 </p>
 
-This heatmap highlights which stylized facts are consistently reproduced and where model failures concentrate.
+### Per-Regime Performance
 
-### `training_losses.png`
 <p align="center">
-  <img src="results/training_losses.png" width="700" alt="Training loss curves across models">
+  <img src="results/cross_model/regime_sf_passed.png" width="700" alt="Stylized facts by regime">
 </p>
 
-This plot is used to check optimization stability, convergence rate, and late-epoch training behavior.
-
-### `acf_absolute.png`
 <p align="center">
-  <img src="results/acf_absolute.png" width="700" alt="Autocorrelation of absolute returns">
+  <img src="results/cross_model/regime_mmd.png" width="700" alt="MMD by regime">
 </p>
 
-This chart evaluates long-memory structure in volatility magnitude over multiple lags.
+### Distribution and Correlation Diagnostics
 
-### `acf_squared.png`
-<p align="center">
-  <img src="results/acf_squared.png" width="700" alt="Autocorrelation of squared returns">
-</p>
-
-This chart focuses on volatility clustering by measuring serial dependence in squared returns.
-
-### `distributions.png`
 <p align="center">
   <img src="results/distributions.png" width="700" alt="Return distribution comparison between real and synthetic samples">
 </p>
 
-This figure compares center and tail behavior of synthetic returns versus real market returns.
-
-### `qq_plots.png`
-<p align="center">
-  <img src="results/qq_plots.png" width="700" alt="QQ plot comparison of synthetic versus real returns">
-</p>
-
-QQ plots expose tail mismatch directly and show whether extreme quantiles are under- or over-estimated.
-
-### `correlation_matrices.png`
 <p align="center">
   <img src="results/correlation_matrices.png" width="700" alt="Correlation matrix comparison for cross-asset structure">
 </p>
 
-This figure checks how well each model preserves cross-asset dependency structure.
-
-For phase-wise DDPM evolution and ablation details, see the next section.
+<p align="center">
+  <img src="results/acf_absolute.png" width="700" alt="Autocorrelation of absolute returns">
+</p>
 
 ## DDPM Ablation Results
 
-Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows, 400 epochs, 3 seeds (42, 123, 456).
+Training on 16 assets, 60-day overlapping windows with stride=1 (5,293 windows), 400 epochs, 3 seeds (42, 123, 456). Evaluated with the updated stylized facts framework.
 
 | Model | Params | Stylized Facts | MMD | Wasserstein-1 | Discriminative Score |
 |-------|-------:|:--------------:|:---:|:-------------:|:--------------------:|
-| **DDPM (v-prediction)** | 9.0M | **4.7 / 6** | 0.019 | 0.161 | 0.82 |
-| **DDPM (v-prediction)** | 2.3M | **4.3 / 6** | 0.039 | 0.249 | 0.89 |
-| **NormFlow** | 6.7M | **5.0 / 6** | **0.005** | **0.085** | 0.74 |
+| **DDPM (v-pred + Student-t)** | 9.0M | **5.0 / 6** | **0.006** | **0.111** | **0.85** |
+| **DDPM (v-prediction)** | 9.0M | **5.0 / 6** | 0.037 | 0.148 | 0.93 |
 
-*Stylized facts: fat tails, volatility clustering, leverage effect, slow ACF decay, cross-asset correlations, no raw autocorrelation.*
+The key algorithmic innovations are **v-prediction** (Salimans & Ho, 2022) and a **Student-t forward process**. V-prediction replaces the standard noise-prediction target with a velocity target, improving stylized facts from 1.7/6 to 5.0/6. Adding Student-t noise (df=5) preserves heavy tails through the diffusion process, reducing MMD by 6x over v-prediction alone (0.006 vs 0.037) with no additional parameters.
 
-The key algorithmic innovation is **v-prediction** (Salimans & Ho, 2022), which replaces the standard noise prediction target with a velocity target. This single change improves stylized facts from 1.7/6 to 4.3/6 and MMD by 9x -- with zero additional parameters or training time. Even at 2.3M params (3x fewer than NormFlow), v-prediction matches NormFlow on 4 of 6 stylized facts.
+**Key discovery**: The sigmoid noise schedule was found to *suppress* volatility clustering and fat tails when combined with v-prediction (dropping SF from 5.0 to 2.7). This interaction effect was identified through controlled Phase 3 experiments. The cosine schedule is the correct pairing for v-prediction.
 
-**Key discovery**: The sigmoid noise schedule, previously believed to be beneficial, was found to *suppress* volatility clustering and fat tails when combined with v-prediction (dropping SF from 4.7 to 2.7). This interaction effect was identified through controlled Phase 3 experiments.
-
-Full experiment results across 5 phases of ablation are in `experiments/results/`.
+Full experiment results across 6 phases of ablation are in `experiments/results/`. Phase 6 results (current eval framework + stride=1 data) are in `experiments/results/phase6_rebaseline/`.
 
 ### DDPM Ablation Study
 
-Multiple DDPM variants were tested across 5 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison and `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test.
+Multiple DDPM variants were tested across 6 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison, `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test, and `experiments/results/phase6_rebaseline/ANALYSIS.md` for the current results under the unified evaluation framework.
 
 <p align="center">
   <img src="experiments/results/fig_radar_chart.png" width="700" alt="Radar chart of normalized metrics across DDPM variants">
