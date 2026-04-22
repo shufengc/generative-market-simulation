@@ -376,11 +376,13 @@ class TimeGANModel(BaseGenerativeModel):
 
     @torch.no_grad()
     def generate(self, n_samples: int, seq_len: int | None = None, **kwargs) -> np.ndarray:
-        """Generate n_samples windows. To mirror the evaluator's real windows
-        (which are built with stride=1 from one long series), we unroll the GRU
-        over a single long sequence of length (n_samples + seq_len - 1) and
-        slide stride-1 windows, so synthetic and real share the same overlap
-        structure (critical for Hurst / GARCH persistence tests)."""
+        """Generate n_samples windows that share overlap structure with the
+        evaluator's real windows (stride=1). We build a long series by
+        generating many independent seq_len chunks with 50% overlap and
+        averaging the overlapping regions — each point is covered by 1-2
+        chunks that are all in the training distribution (no long-rollout
+        drift), yet neighboring stride-1 windows share content, which is
+        what the Hurst / GARCH persistence tests require."""
         if seq_len is None:
             seq_len = self.seq_len
         self.generator.eval()
@@ -388,18 +390,27 @@ class TimeGANModel(BaseGenerativeModel):
         self.recovery.eval()
 
         total_len = n_samples + seq_len - 1
-        # Chunk the long rollout to avoid blowing memory on very large n_samples
-        chunk = max(total_len, 4096)
-        noise = torch.randn(1, total_len, self.latent_dim, device=self.device)
+        chunk_stride = seq_len // 2                    # 50% overlap
+        n_chunks = (total_len - seq_len) // chunk_stride + 2   # cover tail
+        buf_len = seq_len + (n_chunks - 1) * chunk_stride
+
+        noise = self._noise(n_chunks, seq_len)          # each chunk: fresh noise
         e_hat = self.generator(noise)
         h_hat = self.supervisor(e_hat)
-        x_long = self.recovery(h_hat).squeeze(0).cpu().numpy()   # (total_len, D)
+        chunks = self.recovery(h_hat).cpu().numpy()     # (n_chunks, seq_len, D)
 
-        # Stride-1 sliding windows
+        x_long = np.zeros((buf_len, self.n_features), dtype=np.float32)
+        counts = np.zeros((buf_len, 1),                dtype=np.float32)
+        for k in range(n_chunks):
+            s = k * chunk_stride
+            x_long[s:s + seq_len] += chunks[k]
+            counts[s:s + seq_len] += 1
+        x_long /= counts
+
         windows = np.lib.stride_tricks.sliding_window_view(
-            x_long, window_shape=seq_len, axis=0
-        )  # (n_samples, D, seq_len)
-        windows = windows.transpose(0, 2, 1).astype(np.float32)  # (n_samples, seq_len, D)
+            x_long[:total_len], window_shape=seq_len, axis=0
+        )
+        windows = windows.transpose(0, 2, 1).astype(np.float32)
         return np.ascontiguousarray(windows[:n_samples])
 
     def save(self, path: str) -> None:
