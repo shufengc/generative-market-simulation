@@ -67,25 +67,27 @@ Yahoo Finance + FRED API
 
 ## Results
 
-Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows, 400 epochs, 3 seeds (42, 123, 456).
+Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows with stride=1 (5,293 windows), 400 epochs, 3 seeds (42, 123, 456). Evaluated with an updated stylized facts framework (Hill estimator for fat tails, GARCH(1,1) for volatility clustering, Hurst R/S for long memory, max-eigenvalue for cross-asset correlations).
 
 | Model | Params | Stylized Facts | MMD | Wasserstein-1 | Discriminative Score |
 |-------|-------:|:--------------:|:---:|:-------------:|:--------------------:|
-| **DDPM (v-prediction)** | 9.0M | **4.7 / 6** | 0.019 | 0.161 | 0.82 |
-| **DDPM (v-prediction)** | 2.3M | **4.3 / 6** | 0.039 | 0.249 | 0.89 |
-| **NormFlow** | 6.7M | **5.0 / 6** | **0.005** | **0.085** | 0.74 |
+| **DDPM (v-pred + Student-t)** | 9.0M | **5.0 / 6** | **0.006** | **0.111** | **0.85** |
+| **DDPM (v-prediction)** | 9.0M | **5.0 / 6** | 0.037 | 0.148 | 0.93 |
+| **NormFlow** | 6.7M | 5.0 / 6* | 0.005* | 0.085* | 0.74* |
 
-*Stylized facts: fat tails, volatility clustering, leverage effect, slow ACF decay, cross-asset correlations, no raw autocorrelation.*
+*\* NormFlow numbers are from Phase 3 under the previous eval framework and stride=5 data; re-run pending.*
 
-The key algorithmic innovation is **v-prediction** (Salimans & Ho, 2022), which replaces the standard noise prediction target with a velocity target. This single change improves stylized facts from 1.7/6 to 4.3/6 and MMD by 9x -- with zero additional parameters or training time. Even at 2.3M params (3x fewer than NormFlow), v-prediction matches NormFlow on 4 of 6 stylized facts.
+*Stylized facts validated: fat tails, volatility clustering, leverage effect, long memory (Hurst), cross-asset correlations, no raw autocorrelation. All models fail the no-raw-autocorrelation test (SF6).*
 
-**Key discovery**: The sigmoid noise schedule, previously believed to be beneficial, was found to *suppress* volatility clustering and fat tails when combined with v-prediction (dropping SF from 4.7 to 2.7). This interaction effect was identified through controlled Phase 3 experiments.
+The key algorithmic innovations are **v-prediction** (Salimans & Ho, 2022) and a **Student-t forward process**. V-prediction replaces the standard noise-prediction target with a velocity target, improving stylized facts from 1.7/6 to 5.0/6. Adding Student-t noise (df=5) preserves heavy tails through the diffusion process, reducing MMD by 6× over v-prediction alone (0.006 vs 0.037) with no additional parameters.
 
-Full experiment results across 5 phases of ablation are in `experiments/results/`.
+**Key discovery**: The sigmoid noise schedule was found to *suppress* volatility clustering and fat tails when combined with v-prediction (dropping SF from 5.0 to 2.7). This interaction effect was identified through controlled Phase 3 experiments. The cosine schedule is the correct pairing for v-prediction.
+
+Full experiment results across 6 phases of ablation are in `experiments/results/`. Phase 6 results (current eval framework + stride=1 data) are in `experiments/results/phase6_rebaseline/`.
 
 ### DDPM Ablation Study
 
-Multiple DDPM variants were tested across 5 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison and `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test.
+Multiple DDPM variants were tested across 6 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison, `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test, and `experiments/results/phase6_rebaseline/ANALYSIS.md` for the current results under the unified evaluation framework.
 
 <p align="center">
   <img src="experiments/results/fig_radar_chart.png" width="700" alt="Radar chart of normalized metrics across DDPM variants">
