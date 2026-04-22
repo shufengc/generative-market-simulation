@@ -141,12 +141,13 @@ class TimeGANModel(BaseGenerativeModel):
         ae_ratio: float = 0.3,
         sup_ratio: float = 0.2,
         n_gen_steps: int = 2,
-        w_acf: float = 5.0,
-        w_lev: float = 2.0,
-        w_tail: float = 5.0,
-        w_corr: float = 2.0,
-        d_skip_hi: float = 0.8,
-        d_skip_lo: float = 0.2,
+        w_acf: float = 2.0,
+        w_lev: float = 1.0,
+        w_tail: float = 1.0,
+        w_corr: float = 1.0,
+        d_skip_hi: float = 0.9,
+        d_skip_lo: float = 0.1,
+        d_warmup_epochs: int = 10,
         ckpt_path: str | None = None,
         ckpt_every: int = 40,
         **kwargs,
@@ -309,7 +310,8 @@ class TimeGANModel(BaseGenerativeModel):
                     p_real = torch.sigmoid(self.discriminator(h_real_d)).mean().item()
                     p_fake = torch.sigmoid(self.discriminator(h_hat_d)).mean().item()
 
-                if p_real > d_skip_hi and p_fake < d_skip_lo:
+                in_warmup = epoch < d_warmup_epochs
+                if (not in_warmup) and p_real > d_skip_hi and p_fake < d_skip_lo:
                     d_skipped += 1
                     d_loss_val = 0.0
                 else:
