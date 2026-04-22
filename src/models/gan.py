@@ -376,16 +376,31 @@ class TimeGANModel(BaseGenerativeModel):
 
     @torch.no_grad()
     def generate(self, n_samples: int, seq_len: int | None = None, **kwargs) -> np.ndarray:
+        """Generate n_samples windows. To mirror the evaluator's real windows
+        (which are built with stride=1 from one long series), we unroll the GRU
+        over a single long sequence of length (n_samples + seq_len - 1) and
+        slide stride-1 windows, so synthetic and real share the same overlap
+        structure (critical for Hurst / GARCH persistence tests)."""
         if seq_len is None:
             seq_len = self.seq_len
         self.generator.eval()
         self.supervisor.eval()
         self.recovery.eval()
 
-        noise = self._noise(n_samples, seq_len)
-        h_hat = self.supervisor(self.generator(noise))
-        x_hat = self.recovery(h_hat)
-        return x_hat.cpu().numpy()
+        total_len = n_samples + seq_len - 1
+        # Chunk the long rollout to avoid blowing memory on very large n_samples
+        chunk = max(total_len, 4096)
+        noise = torch.randn(1, total_len, self.latent_dim, device=self.device)
+        e_hat = self.generator(noise)
+        h_hat = self.supervisor(e_hat)
+        x_long = self.recovery(h_hat).squeeze(0).cpu().numpy()   # (total_len, D)
+
+        # Stride-1 sliding windows
+        windows = np.lib.stride_tricks.sliding_window_view(
+            x_long, window_shape=seq_len, axis=0
+        )  # (n_samples, D, seq_len)
+        windows = windows.transpose(0, 2, 1).astype(np.float32)  # (n_samples, seq_len, D)
+        return np.ascontiguousarray(windows[:n_samples])
 
     def save(self, path: str) -> None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
