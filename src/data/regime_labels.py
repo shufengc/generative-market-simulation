@@ -73,6 +73,7 @@ def build_macro_conditioning(
     returns_df: pd.DataFrame,
     vix_df: pd.DataFrame | None = None,
     macro_df: pd.DataFrame | None = None,
+    prices_df: pd.DataFrame | None = None,
     rvol_window: int = 20,
 ) -> pd.DataFrame:
     """
@@ -81,30 +82,32 @@ def build_macro_conditioning(
     Columns (all z-scored): yield_curve_slope, credit_spread, fed_funds,
     vix_level, realized_vol.
 
-    Missing series are filled with zeros.
+    FRED macro_df provides yield_curve_slope (GS10-GS2), credit_spread
+    (BAMLH0A0HYM2), and fed_funds (FEDFUNDS). Missing series are filled with zeros.
+    prices_df is accepted for API compatibility but is not used here.
     """
     idx = returns_df.index
     cond = pd.DataFrame(index=idx)
 
-    # Yield curve slope
+    # Yield curve slope (10yr - 2yr Treasury, from FRED)
     if macro_df is not None and "GS10" in macro_df.columns and "GS2" in macro_df.columns:
         cond["yield_curve_slope"] = (macro_df["GS10"] - macro_df["GS2"]).reindex(idx).ffill().bfill()
     else:
         cond["yield_curve_slope"] = 0.0
 
-    # Credit spread
+    # Credit spread (HY OAS, from FRED)
     if macro_df is not None and "BAMLH0A0HYM2" in macro_df.columns:
         cond["credit_spread"] = macro_df["BAMLH0A0HYM2"].reindex(idx).ffill().bfill()
     else:
         cond["credit_spread"] = 0.0
 
-    # Fed funds
+    # Fed funds rate (from FRED)
     if macro_df is not None and "FEDFUNDS" in macro_df.columns:
         cond["fed_funds"] = macro_df["FEDFUNDS"].reindex(idx).ffill().bfill()
     else:
         cond["fed_funds"] = 0.0
 
-    # VIX
+    # VIX level (from Yahoo Finance ^VIX)
     if vix_df is not None and len(vix_df) > 0:
         vix_col = vix_df.columns[0] if isinstance(vix_df, pd.DataFrame) else "^VIX"
         vix_vals = vix_df[vix_col] if isinstance(vix_df, pd.DataFrame) else vix_df
@@ -112,9 +115,9 @@ def build_macro_conditioning(
     else:
         cond["vix_level"] = 0.0
 
-    # Realized volatility
+    # Realised volatility: 20-day annualised vol of SPY
     spy_ret = returns_df.iloc[:, 0]
-    cond["realized_vol"] = spy_ret.rolling(rvol_window).std().bfill() * np.sqrt(252)
+    cond["realized_vol"] = spy_ret.rolling(rvol_window, min_periods=1).std().bfill() * np.sqrt(252)
 
     # Z-score each column
     for col in cond.columns:
@@ -171,11 +174,17 @@ def get_regime_conditioning_vectors() -> dict[str, np.ndarray]:
 
     The vectors are approximate z-scored macro feature values:
       [yield_curve_slope, credit_spread, fed_funds, vix_level, realized_vol]
+
+      yield_curve_slope: GS10 - GS2  (high = steep, low/neg = inverted)
+      credit_spread:     BAMLH0A0HYM2 (high = wide/stress, low = tight/calm)
+      fed_funds:         FEDFUNDS     (high = tight policy, low = loose)
+      vix_level:         VIX          (high = fearful, low = complacent)
+      realized_vol:      SPY 20d ann. vol (high = turbulent, low = quiet)
     """
     return {
-        "crisis": np.array([-1.5, 2.0, -0.5, 2.0, 2.0], dtype=np.float32),
-        "calm":   np.array([1.0, -1.0, 0.0, -1.5, -1.5], dtype=np.float32),
-        "normal": np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        "crisis": np.array([-1.5,  2.0, -0.5,  2.0,  2.0], dtype=np.float32),
+        "calm":   np.array([ 1.0, -1.0,  0.0, -1.5, -1.5], dtype=np.float32),
+        "normal": np.array([ 0.0,  0.0,  0.0,  0.0,  0.0], dtype=np.float32),
     }
 
 
@@ -185,6 +194,7 @@ def prepare_regime_data(
     macro_df: pd.DataFrame | None,
     window_dates: list[tuple],
     data_dir: str | None = None,
+    prices_df: pd.DataFrame | None = None,
 ) -> dict:
     """
     Full regime-labeling pipeline. Computes daily regimes, window labels,
@@ -194,7 +204,7 @@ def prepare_regime_data(
         data_dir = DATA_DIR
 
     daily_regimes = label_daily_regimes(returns_df, vix_df, macro_df)
-    daily_cond = build_macro_conditioning(returns_df, vix_df, macro_df)
+    daily_cond = build_macro_conditioning(returns_df, vix_df, macro_df, prices_df=prices_df)
 
     window_regimes = assign_window_regimes(daily_regimes, window_dates)
     window_cond = assign_window_conditioning(daily_cond, window_dates)
