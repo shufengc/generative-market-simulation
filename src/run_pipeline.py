@@ -148,8 +148,12 @@ def step_train(data_dir: str, models_to_train: list[str],
             from src.models.gan import TimeGANModel
             model = TimeGANModel(n_features=n_features, seq_len=seq_len, device=device)
             tgan_epochs = int(epochs * 1.5)
-            history = model.train(windows, epochs=tgan_epochs, batch_size=batch_size)
-            model.save(os.path.join(CHECKPOINTS_DIR, "timegan.pt"))
+            tgan_ckpt = os.path.join(CHECKPOINTS_DIR, "timegan.pt")
+            history = model.train(
+                windows, epochs=tgan_epochs, batch_size=batch_size,
+                ckpt_path=tgan_ckpt, ckpt_every=40,
+            )
+            model.save(tgan_ckpt)
             training_losses[model_name] = history.get("g", [])
 
         elif model_name == "flow":
