@@ -1,0 +1,146 @@
+{
+  "ddpm": {
+    "horizons": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      60
+    ],
+    "sub_scores": {
+      "acf_coherence": 0.1667,
+      "vol_coherence": 0.1667,
+      "mean_reversion": 0.0,
+      "cumulative_ks": 0.5,
+      "lead_lag": 0.3
+    },
+    "overall_score": 0.2267,
+    "pass": false,
+    "tests": {
+      "acf_profile_distance": {
+        "1": 0.327754,
+        "5": 0.604346,
+        "10": 0.750898,
+        "20": 0.90534,
+        "30": 0.985219,
+        "60": 1.408971
+      },
+      "rolling_vol_w1": {
+        "1": 0.0,
+        "5": 0.094789,
+        "10": 0.100249,
+        "20": 0.100638,
+        "30": 0.100551,
+        "60": 0.082237
+      },
+      "mean_reversion": {
+        "halflife_real": null,
+        "halflife_syn": null,
+        "halflife_diff": null
+      },
+      "cumulative_return_ks": {
+        "1": {
+          "ks_stat": 0.07,
+          "p_value": 0.1726
+        },
+        "5": {
+          "ks_stat": 0.06,
+          "p_value": 0.3294
+        },
+        "10": {
+          "ks_stat": 0.084,
+          "p_value": 0.0587
+        },
+        "20": {
+          "ks_stat": 0.118,
+          "p_value": 0.0019
+        },
+        "30": {
+          "ks_stat": 0.094,
+          "p_value": 0.0241
+        },
+        "60": {
+          "ks_stat": 0.156,
+          "p_value": 0.0
+        }
+      },
+      "lead_lag_sign_preservation": {
+        "match_rate": 0.3,
+        "n_pairs": 10
+      }
+    }
+  },
+  "ddpm_improved": {
+    "horizons": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      60
+    ],
+    "sub_scores": {
+      "acf_coherence": 0.1667,
+      "vol_coherence": 0.1667,
+      "mean_reversion": 0.0,
+      "cumulative_ks": 0.8333,
+      "lead_lag": 0.2
+    },
+    "overall_score": 0.2733,
+    "pass": false,
+    "tests": {
+      "acf_profile_distance": {
+        "1": 0.430116,
+        "5": 0.837313,
+        "10": 1.070056,
+        "20": 1.292543,
+        "30": 1.38364,
+        "60": 1.72385
+      },
+      "rolling_vol_w1": {
+        "1": 0.0,
+        "5": 0.139332,
+        "10": 0.148516,
+        "20": 0.143931,
+        "30": 0.151299,
+        "60": 0.12123
+      },
+      "mean_reversion": {
+        "halflife_real": null,
+        "halflife_syn": null,
+        "halflife_diff": null
+      },
+      "cumulative_return_ks": {
+        "1": {
+          "ks_stat": 0.06,
+          "p_value": 0.3294
+        },
+        "5": {
+          "ks_stat": 0.062,
+          "p_value": 0.2919
+        },
+        "10": {
+          "ks_stat": 0.062,
+          "p_value": 0.2919
+        },
+        "20": {
+          "ks_stat": 0.068,
+          "p_value": 0.198
+        },
+        "30": {
+          "ks_stat": 0.072,
+          "p_value": 0.1497
+        },
+        "60": {
+          "ks_stat": 0.122,
+          "p_value": 0.0012
+        }
+      },
+      "lead_lag_sign_preservation": {
+        "match_rate": 0.2,
+        "n_pairs": 10
+      }
+    }
+  }
+}
