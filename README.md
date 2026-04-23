@@ -285,18 +285,33 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 
 | Member | Role |
 |--------|------|
-| Shufeng Chen | Lead, DDPM, Integration, Demo |
-| Yixuan Ye | TimeGAN, Evaluation Framework |
-| Yizheng Lin | VAE, Data Pipeline |
+| Shufeng Chen | DDPM Baseline & Improved (v-prediction, Student-t), Ablation Study, Integration, Demo |
+| Yixuan Ye | TimeGAN, Evaluation Framework (Stylized Facts), Data Pipeline |
+| Yizheng Lin | VAE (Improved + Original), Data Pipeline, FRED Integration |
 | Kevin Sun | GARCH Baseline, Visualization |
-| Yuxia Meng | Normalizing Flow, Proposal |
+| Yuxia Meng | Normalizing Flow (RealNVP), Cross-Model Analysis, DDPM Training Enhancements |
 
 ## References
 
+### Financial Time Series Generation
 - Coletta et al. (2025). *TRADES: Generating Realistic Market Simulations with Diffusion Models.* arXiv:2502.07071
 - Li et al. (2024). *Beyond Monte Carlo: Harnessing Diffusion Models to Simulate Financial Market Dynamics.* arXiv:2412.00036
 - Zhang et al. (2024). *Generation of Synthetic Financial Time Series by Diffusion Models.* arXiv:2410.18897
 - Du et al. (2024). *FTS-Diffusion: Generative Learning for Financial Time Series.* ICLR 2024
 - Wiese et al. (2020). *Quant GANs: Deep Generation of Financial Time Series.* Quantitative Finance
+
+### Diffusion Models
+- Ho et al. (2020). *Denoising Diffusion Probabilistic Models.* NeurIPS 2020
+- Salimans & Ho (2022). *Progressive Distillation for Fast Sampling of Diffusion Models.* ICLR 2022 (v-prediction objective)
+- Song et al. (2021). *Denoising Diffusion Implicit Models.* ICLR 2021 (DDIM sampling)
+- Nichol & Dhariwal (2021). *Improved Denoising Diffusion Probabilistic Models.* ICML 2021 (cosine noise schedule)
+- Hang et al. (2023). *Efficient Diffusion Training via Min-SNR Weighting Strategy.* ICCV 2023
+
+### Other Generative Models
 - Yoon et al. (2019). *Time-series Generative Adversarial Networks.* NeurIPS 2019
+- Dinh et al. (2017). *Density Estimation Using Real-Valued Non-Volume Preserving Transformations.* ICLR 2017 (RealNVP)
+- Gulrajani et al. (2017). *Improved Training of Wasserstein GANs.* NeurIPS 2017 (WGAN-GP)
+- Bollerslev (1986). *Generalized Autoregressive Conditional Heteroskedasticity.* Journal of Econometrics
+
+### Evaluation
 - Cont (2001). *Empirical Properties of Asset Returns: Stylized Facts and Statistical Issues.* Quantitative Finance
