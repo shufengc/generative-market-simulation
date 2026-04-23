@@ -27,6 +27,7 @@ from src.utils.config import (
     DATA_DIR, CHECKPOINTS_DIR, RESULTS_DIR,
     DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LR, SEED, DEFAULT_DEVICE,
 )
+from src.data.download import DEFAULT_FRED_KEY
 
 
 def set_seed(seed: int = SEED):
@@ -266,7 +267,11 @@ def main():
     parser.add_argument("--quick", action="store_true", help="Quick run with reduced epochs/samples")
     parser.add_argument("--n-samples", type=int, default=2000)
     parser.add_argument("--data-dir", default=DATA_DIR)
-    parser.add_argument("--fred-key", default=None)
+    parser.add_argument(
+        "--fred-key",
+        default=DEFAULT_FRED_KEY,
+        help="FRED API key (default: src.data.download.DEFAULT_FRED_KEY)",
+    )
     args = parser.parse_args()
 
     if args.quick:
