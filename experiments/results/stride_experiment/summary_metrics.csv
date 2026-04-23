@@ -1,0 +1,13 @@
+stride,model,checkpoint,sf_passed,proposal_criteria_passed,mmd,wasserstein_1d,sig_w1,ks_stat,discriminative_score,correlation_matrix_distance,temporal_coherence
+1,ddpm,/home/lyz/ELEN4904/Project/checkpoints/ddpm_1.pt,4,2,0.002697,0.067089,12.197958,0.0678,0.998,3.8783,0.2267
+1,ddpm_improved,/home/lyz/ELEN4904/Project/checkpoints/ddpm_improved_1.pt,4,2,0.003578,0.103953,21.557036,0.1016,0.998,3.1131,0.2733
+2,ddpm,/home/lyz/ELEN4904/Project/checkpoints/ddpm_2.pt,4,4,0.019999,0.117362,23.061257,0.0764,0.7658,2.0488,0.28
+2,ddpm_improved,/home/lyz/ELEN4904/Project/checkpoints/ddpm_improved_2.pt,4,5,0.010609,0.067986,15.954814,0.0962,0.6729,1.4435,0.36
+3,ddpm,/home/lyz/ELEN4904/Project/checkpoints/ddpm_3.pt,4,4,0.161007,0.651336,46.813407,0.1872,0.8179,1.5434,0.2667
+3,ddpm_improved,/home/lyz/ELEN4904/Project/checkpoints/ddpm_improved_3.pt,4,3,0.002217,0.057008,30.138351,0.1032,0.5641,1.5509,0.4667
+5,ddpm,/home/lyz/ELEN4904/Project/checkpoints/ddpm_5.pt,3,2,0.260477,1.110049,41.506809,0.287,0.958,4.7381,0.2267
+5,ddpm_improved,/home/lyz/ELEN4904/Project/checkpoints/ddpm_improved_5.pt,4,2,0.010862,0.123936,24.383494,0.1022,0.731,3.9177,0.24
+10,ddpm,/home/lyz/ELEN4904/Project/checkpoints/ddpm_10.pt,5,2,0.333622,1.469912,49.212007,0.3256,0.982,6.7918,0.1867
+10,ddpm_improved,/home/lyz/ELEN4904/Project/checkpoints/ddpm_improved_10.pt,4,1,0.032888,0.202588,15.632208,0.1238,0.894,5.8594,0.1667
+20,ddpm,/home/lyz/ELEN4904/Project/checkpoints/ddpm_20.pt,3,2,0.363604,1.84454,65.422449,0.3562,0.9868,7.351,0.1867
+20,ddpm_improved,/home/lyz/ELEN4904/Project/checkpoints/ddpm_improved_20.pt,3,1,0.037097,0.303084,26.358201,0.1378,0.8849,6.9932,0.1867

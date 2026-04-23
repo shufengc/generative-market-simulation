@@ -1,0 +1,99 @@
+======================================================================
+CROSS-MODEL ANALYSIS REPORT
+======================================================================
+
+## Overall Ranking (Borda Count)
+--------------------------------------------------
+  #1  VAE_improved  (Borda score: 14)
+  #2  VAE_original  (Borda score: 25)
+
+## Per-Model Metrics
+--------------------------------------------------
+
+  VAE_IMPROVED
+    sf_passed                     : 5
+    mmd                           : 0.000271
+    wasserstein_1d                : 0.084900
+    sig_w1                        : 8.845123
+    ks_stat                       : 0.059600
+    discriminative_score          : 0.997000
+    correlation_matrix_distance   : 3.303100
+    proposal_criteria_passed      : 2
+    hill_diff                     : 0.919600
+    persistence_diff              : 0.193300
+    hurst_diff                    : 0.070200
+    eigenvalue_rel_diff           : 0.288800
+    spectral_distance             : 2.714600
+    temporal_coherence            : 0.226700
+
+  VAE_ORIGINAL
+    sf_passed                     : 4
+    mmd                           : 0.422620
+    wasserstein_1d                : 0.433303
+    sig_w1                        : 8.806027
+    ks_stat                       : 0.503000
+    discriminative_score          : 1.000000
+    correlation_matrix_distance   : 13.276400
+    proposal_criteria_passed      : 1
+    hill_diff                     : 105.583000
+    persistence_diff              : 0.216800
+    hurst_diff                    : 0.506700
+    eigenvalue_rel_diff           : 1.171600
+    spectral_distance             : 8.092400
+    temporal_coherence            : 0.153300
+
+## Bootstrap Confidence Intervals (95%)
+--------------------------------------------------
+
+  VAE_IMPROVED
+    mmd                      : 0.0105  [0.0005, 0.0565]
+    wasserstein              : 0.1431  [0.0399, 0.3601]
+    ks_stat                  : 0.0679  [0.0439, 0.1075]
+    discriminative_score     : 0.9999  [0.9990, 1.0000]
+    corr_distance            : 3.3265  [3.1305, 3.5158]
+
+  VAE_ORIGINAL
+    mmd                      : 0.4215  [0.4141, 0.4299]
+    wasserstein              : 0.4680  [0.4372, 0.5120]
+    ks_stat                  : 0.5080  [0.4992, 0.5224]
+    discriminative_score     : 1.0000  [1.0000, 1.0000]
+    corr_distance            : 13.2934  [13.1591, 13.4134]
+
+## Per-Regime Performance
+--------------------------------------------------
+
+  Regime: Normal
+    VAE_improved  SF=5/6  MMD=0.0130  Disc=0.77
+    VAE_original  SF=4/6  MMD=0.4498  Disc=1.00
+
+  Regime: Crisis
+    VAE_improved  SF=5/6  MMD=0.0113  Disc=0.90
+    VAE_original  SF=4/6  MMD=0.4253  Disc=1.00
+
+  Regime: Calm
+    VAE_improved  SF=5/6  MMD=0.0003  Disc=0.98
+    VAE_original  SF=4/6  MMD=0.4226  Disc=1.00
+
+## Proposal Table 1 Criteria (Industrial-Grade)
+--------------------------------------------------
+  Model           Hill a   Tail KS   GARCH g     GJR t   Hurst H    L1 rel
+  VAE_improved    0.9196    0.0000    0.1933    0.0570    0.6498    0.2888
+  VAE_original  105.5830     N/A      0.2168    0.4579    0.2133    1.1716
+
+  Thresholds: Hill da<0.1  TailKS p>0.05  GARCH dg<0.02  GJR t>0  Hurst in(0.5,1)  L1 rel<5%
+
+## Temporal Coherence (Long-Horizon Quality)
+--------------------------------------------------
+  Model          Score    ACF    Vol     MR  CumKS    L-L  Result
+  VAE_improved    0.23   0.17   0.17      0   0.50   0.30    FAIL
+  VAE_original    0.15   0.00   0.17      0   0.00   0.60    FAIL
+
+  Sub-tests: ACF=autocorrelation profile, Vol=rolling volatility,
+  MR=mean-reversion half-life, CumKS=cumulative return KS, L-L=lead-lag sign
+
+## Computational Cost
+--------------------------------------------------
+    VAE_improved: 0.8s
+    VAE_original: 0.0s
+
+======================================================================
