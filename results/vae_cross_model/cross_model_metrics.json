@@ -1,0 +1,34 @@
+{
+  "VAE_improved": {
+    "sf_passed": 5,
+    "mmd": 0.000271,
+    "wasserstein_1d": 0.0849,
+    "sig_w1": 8.845123,
+    "ks_stat": 0.0596,
+    "discriminative_score": 0.997,
+    "correlation_matrix_distance": 3.3031,
+    "proposal_criteria_passed": 2,
+    "hill_diff": 0.9196,
+    "persistence_diff": 0.1933,
+    "hurst_diff": 0.0702,
+    "eigenvalue_rel_diff": 0.2888,
+    "spectral_distance": 2.7146,
+    "temporal_coherence": 0.2267
+  },
+  "VAE_original": {
+    "sf_passed": 4,
+    "mmd": 0.42262,
+    "wasserstein_1d": 0.433303,
+    "sig_w1": 8.806027,
+    "ks_stat": 0.503,
+    "discriminative_score": 1.0,
+    "correlation_matrix_distance": 13.2764,
+    "proposal_criteria_passed": 1,
+    "hill_diff": 105.583,
+    "persistence_diff": 0.2168,
+    "hurst_diff": 0.5067,
+    "eigenvalue_rel_diff": 1.1716,
+    "spectral_distance": 8.0924,
+    "temporal_coherence": 0.1533
+  }
+}
