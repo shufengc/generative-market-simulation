@@ -1,0 +1,27 @@
+{
+  "strides": [
+    1,
+    2,
+    3,
+    5,
+    10,
+    20
+  ],
+  "models": [
+    "ddpm",
+    "ddpm_improved"
+  ],
+  "epochs": 400,
+  "n_samples": 500,
+  "n_bootstrap": 50,
+  "device": "cuda",
+  "retrain": false,
+  "stride_dirs": [
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment/stride_1",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment/stride_2",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment/stride_3",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment/stride_5",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment/stride_10",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment/stride_20"
+  ]
+}
