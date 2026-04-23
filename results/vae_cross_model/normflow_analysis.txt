@@ -1,0 +1,30 @@
+======================================================================
+VAE-ONLY COMPARISON NOTE
+======================================================================
+
+Models:
+  VAE_improved  — src.models.vae.FinancialVAE  (checkpoint: vae.pt)
+  VAE_original  — src.models.vae_origin.FinancialVAE  (checkpoint: vae_origin.pt)
+
+Outputs (radar, CIs, regime heatmaps, ranking, report) use the same
+layout as src.evaluation.cross_model_analysis.run_cross_model_analysis.
+The generic NormFlow narrative is omitted for this two-VAE run.
+
+Quick metric snapshot:
+--------------------------------------------------
+  VAE_improved
+    sf_passed: 5
+    mmd: 0.000271
+    discriminative_score: 0.997
+    proposal_criteria_passed: 2
+    sig_w1: 8.845123
+
+  VAE_original
+    sf_passed: 4
+    mmd: 0.42262
+    discriminative_score: 1.0
+    proposal_criteria_passed: 1
+    sig_w1: 8.806027
+
+Full detail: cross_model_report.txt and cross_model_metrics.json in save_dir.
+======================================================================
