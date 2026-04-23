@@ -88,6 +88,7 @@ class AutoregressiveDecoder(nn.Module):
 
     def __init__(self, latent_dim: int, hidden_dim: int, output_dim: int,
                  seq_len: int, n_layers: int = 2, dropout: float = 0.1,
+                 cond_dim: int = 0,
                  factor_dim: int = 2,
                  min_log_sigma: float = -5.0, max_log_sigma: float = 2.0):
         super().__init__()
@@ -96,15 +97,17 @@ class AutoregressiveDecoder(nn.Module):
         self.output_dim = output_dim
         self.seq_len = seq_len
         self.n_layers = n_layers
+        self.cond_dim = max(int(cond_dim), 0)
         self.factor_dim = factor_dim
         self.min_log_sigma = min_log_sigma
         self.max_log_sigma = max_log_sigma
 
-        self.fc_init = nn.Linear(latent_dim, hidden_dim * n_layers)
+        init_input_dim = latent_dim + self.cond_dim
+        self.fc_init = nn.Linear(init_input_dim, hidden_dim * n_layers)
         self.start_token = nn.Parameter(torch.zeros(1, 1, output_dim))
 
         self.gru = nn.GRU(
-            output_dim + latent_dim, hidden_dim, n_layers,
+            output_dim + latent_dim + self.cond_dim, hidden_dim, n_layers,
             batch_first=True,
             dropout=dropout if n_layers > 1 else 0.0,
         )
@@ -128,9 +131,15 @@ class AutoregressiveDecoder(nn.Module):
     def df(self) -> torch.Tensor:
         return 2.1 + F.softplus(self.log_df)
 
-    def _init_hidden(self, z: torch.Tensor) -> torch.Tensor:
+    def _init_hidden(self, z: torch.Tensor, cond: Optional[torch.Tensor] = None) -> torch.Tensor:
         B = z.size(0)
-        h0 = torch.tanh(self.fc_init(z)).view(B, self.n_layers, self.hidden_dim)
+        if self.cond_dim > 0:
+            if cond is None:
+                cond = torch.zeros(B, self.cond_dim, device=z.device, dtype=z.dtype)
+            init_input = torch.cat([z, cond], dim=-1)
+        else:
+            init_input = z
+        h0 = torch.tanh(self.fc_init(init_input)).view(B, self.n_layers, self.hidden_dim)
         return h0.transpose(0, 1).contiguous()          # (n_layers, B, H)
 
     def _heads(self, h_out: torch.Tensor):
@@ -147,21 +156,58 @@ class AutoregressiveDecoder(nn.Module):
             loading = self.head_loading(h_out).view(*lshape)
         return mu, sigma, loading
 
-    def forward_teacher(self, z: torch.Tensor, x: torch.Tensor):
+    def forward_teacher(
+        self,
+        z: torch.Tensor,
+        x: torch.Tensor,
+        cond: Optional[torch.Tensor] = None,
+        teacher_forcing_ratio: float = 1.0,
+    ):
         """
         Teacher-forced pass.
         Returns cond_mean (B, T, F), sigma (B, T, F), loading (B, T, F, K) or None.
         cond_mean = mu + L @ f with f ~ N(0, I_K) drawn fresh each call.
         """
         B, T, _ = x.shape
-        start = self.start_token.expand(B, 1, self.output_dim)
-        shifted = torch.cat([start, x[:, :-1]], dim=1)          # x_{t-1}
-        z_rep = z.unsqueeze(1).expand(-1, T, -1)
-        gru_in = torch.cat([shifted, z_rep], dim=-1)
+        if self.cond_dim > 0 and cond is None:
+            cond = torch.zeros(B, self.cond_dim, device=x.device, dtype=x.dtype)
+        cond_step = cond.unsqueeze(1) if cond is not None else None
+        z_step = z.unsqueeze(1)
 
-        h0 = self._init_hidden(z)
-        out, _ = self.gru(gru_in, h0)
-        mu, sigma, loading = self._heads(out)
+        h = self._init_hidden(z, cond)
+        x_prev = self.start_token.expand(B, 1, self.output_dim)
+
+        mu_steps = []
+        sigma_steps = []
+        loading_steps = [] if self.head_loading is not None else None
+
+        tf_ratio = float(max(0.0, min(1.0, teacher_forcing_ratio)))
+        for t in range(T):
+            parts = [x_prev, z_step]
+            if cond_step is not None:
+                parts.append(cond_step)
+            gru_in = torch.cat(parts, dim=-1)
+            out, h = self.gru(gru_in, h)
+            mu_t, sigma_t, loading_t = self._heads(out)
+
+            mu_steps.append(mu_t)
+            sigma_steps.append(sigma_t)
+            if loading_steps is not None:
+                loading_steps.append(loading_t)
+
+            if t + 1 < T:
+                x_true = x[:, t:t + 1]
+                if tf_ratio >= 1.0:
+                    x_prev = x_true
+                elif tf_ratio <= 0.0:
+                    x_prev = mu_t.detach()
+                else:
+                    use_teacher = (torch.rand(B, 1, 1, device=x.device) < tf_ratio)
+                    x_prev = torch.where(use_teacher, x_true, mu_t.detach())
+
+        mu = torch.cat(mu_steps, dim=1)
+        sigma = torch.cat(sigma_steps, dim=1)
+        loading = torch.cat(loading_steps, dim=1) if loading_steps is not None else None
 
         if loading is not None:
             f = torch.randn(B, T, self.factor_dim, device=x.device, dtype=x.dtype)
@@ -173,15 +219,26 @@ class AutoregressiveDecoder(nn.Module):
         return cond_mean, sigma, loading
 
     @torch.no_grad()
-    def sample(self, z: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
+    def sample(
+        self,
+        z: torch.Tensor,
+        cond: Optional[torch.Tensor] = None,
+        deterministic: bool = False,
+    ) -> torch.Tensor:
         """Free-running generation from latent z. Returns (B, T, F)."""
         B = z.size(0)
-        h = self._init_hidden(z)
+        if self.cond_dim > 0 and cond is None:
+            cond = torch.zeros(B, self.cond_dim, device=z.device, dtype=z.dtype)
+        cond_step = cond.unsqueeze(1) if cond is not None else None
+        h = self._init_hidden(z, cond)
         x_prev = self.start_token.expand(B, 1, self.output_dim).contiguous()
         df = self.df
         outputs = []
         for _ in range(self.seq_len):
-            gru_in = torch.cat([x_prev, z.unsqueeze(1)], dim=-1)
+            parts = [x_prev, z.unsqueeze(1)]
+            if cond_step is not None:
+                parts.append(cond_step)
+            gru_in = torch.cat(parts, dim=-1)
             out, h = self.gru(gru_in, h)
             mu, sigma, loading = self._heads(out)
 
@@ -255,6 +312,21 @@ def _cyclical_beta(step: int, total_steps: int, beta_max: float,
     return beta_max
 
 
+def _linear_schedule(
+    step: int,
+    total_steps: int,
+    start: float,
+    end: float,
+    decay_ratio: float = 1.0,
+) -> float:
+    """Linear schedule from start to end over (decay_ratio * total_steps)."""
+    if total_steps <= 0:
+        return end
+    decay_steps = max(int(total_steps * max(min(decay_ratio, 1.0), 1e-6)), 1)
+    alpha = min(max(step / decay_steps, 0.0), 1.0)
+    return (1.0 - alpha) * start + alpha * end
+
+
 # ---------------------------------------------------------------------------
 # Main model
 # ---------------------------------------------------------------------------
@@ -271,6 +343,7 @@ class FinancialVAE(BaseGenerativeModel):
         latent_dim: int = 32,
         n_layers: int = 2,
         dropout: float = 0.1,
+        cond_dim: int = 0,
         factor_dim: int = 2,
         device: str = "cpu",
     ):
@@ -280,17 +353,21 @@ class FinancialVAE(BaseGenerativeModel):
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
         self.n_layers = n_layers
+        self.dropout = dropout
+        self.cond_dim = max(int(cond_dim), 0)
         self.factor_dim = factor_dim
 
         self.encoder = Encoder(n_features, hidden_dim, latent_dim, n_layers, dropout).to(self.device)
         self.decoder = AutoregressiveDecoder(
             latent_dim, hidden_dim, n_features, seq_len, n_layers, dropout,
+            cond_dim=self.cond_dim,
             factor_dim=factor_dim,
         ).to(self.device)
 
         # Aggregate-posterior cache (populated at end of training).
         self._agg_mu: Optional[torch.Tensor] = None
         self._agg_logvar: Optional[torch.Tensor] = None
+        self._agg_cond: Optional[torch.Tensor] = None
 
     # ------------------------------------------------------------------
     # Core operations
@@ -301,10 +378,17 @@ class FinancialVAE(BaseGenerativeModel):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def forward(self, x: torch.Tensor):
+    def forward(
+        self,
+        x: torch.Tensor,
+        cond: Optional[torch.Tensor] = None,
+        teacher_forcing_ratio: float = 1.0,
+    ):
         mu, logvar = self.encoder(x)
         z = self.reparameterize(mu, logvar)
-        cond_mean, sigma_x, _loading = self.decoder.forward_teacher(z, x)
+        cond_mean, sigma_x, _loading = self.decoder.forward_teacher(
+            z, x, cond=cond, teacher_forcing_ratio=teacher_forcing_ratio
+        )
         return cond_mean, sigma_x, mu, logvar
 
     def _loss(
@@ -389,6 +473,9 @@ class FinancialVAE(BaseGenerativeModel):
         beta_max: float = 0.5,
         free_bits: float = 0.05,
         n_kl_cycles: int = 4,
+        teacher_forcing_start: float = 1.0,
+        teacher_forcing_end: float = 0.3,
+        teacher_forcing_decay_ratio: float = 0.7,
         acf_weight: float = 1.0,
         acf_abs_weight: float = 2.0,
         corr_weight: float = 3.0,
@@ -404,8 +491,28 @@ class FinancialVAE(BaseGenerativeModel):
         assert x_tensor.shape[1] == self.seq_len, (
             f"data seq_len {x_tensor.shape[1]} does not match model seq_len {self.seq_len}"
         )
+        cond_np = kwargs.get("cond", None)
+        cond_tensor = None
+        if self.cond_dim > 0:
+            if cond_np is None:
+                cond_tensor = torch.zeros((x_tensor.shape[0], self.cond_dim), dtype=torch.float32)
+            else:
+                cond_tensor = torch.tensor(cond_np, dtype=torch.float32)
+                if cond_tensor.ndim == 1:
+                    cond_tensor = cond_tensor.unsqueeze(1)
+                if cond_tensor.shape[0] != x_tensor.shape[0]:
+                    raise ValueError(
+                        f"cond rows ({cond_tensor.shape[0]}) must match data windows ({x_tensor.shape[0]})"
+                    )
+                if cond_tensor.shape[1] != self.cond_dim:
+                    raise ValueError(
+                        f"cond dim ({cond_tensor.shape[1]}) must match model cond_dim ({self.cond_dim})"
+                    )
 
-        dataset = TensorDataset(x_tensor)
+        if cond_tensor is not None:
+            dataset = TensorDataset(x_tensor, cond_tensor)
+        else:
+            dataset = TensorDataset(x_tensor)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
         # Reference ACF on real training data (compute once).
@@ -422,15 +529,31 @@ class FinancialVAE(BaseGenerativeModel):
 
         total_steps = max(epochs * max(len(loader), 1), 1)
         losses = {"total": [], "recon": [], "kl": [], "acf_r": [], "acf_abs": [],
-                  "corr": [], "df": [], "beta": []}
+                  "corr": [], "df": [], "beta": [], "tf_ratio": []}
 
         global_step = 0
         for epoch in range(epochs):
             tot = rec = klv = ar = aa = co = dfv = 0.0
             beta = 0.0
-            for (batch,) in loader:
+            tf_ratio = 1.0
+            for packed in loader:
+                if cond_tensor is not None:
+                    batch, cond_batch = packed
+                    cond_batch = cond_batch.to(self.device)
+                else:
+                    (batch,) = packed
+                    cond_batch = None
                 batch = batch.to(self.device)
-                mu_x, sigma_x, mu, logvar = self.forward(batch)
+                tf_ratio = _linear_schedule(
+                    global_step,
+                    total_steps,
+                    start=teacher_forcing_start,
+                    end=teacher_forcing_end,
+                    decay_ratio=teacher_forcing_decay_ratio,
+                )
+                mu_x, sigma_x, mu, logvar = self.forward(
+                    batch, cond=cond_batch, teacher_forcing_ratio=tf_ratio
+                )
 
                 beta = _cyclical_beta(global_step, total_steps, beta_max, n_kl_cycles)
                 loss, stats = self._loss(
@@ -464,6 +587,7 @@ class FinancialVAE(BaseGenerativeModel):
             losses["corr"].append(co / n)
             losses["df"].append(dfv / n)
             losses["beta"].append(beta)
+            losses["tf_ratio"].append(tf_ratio)
 
             if verbose and ((epoch + 1) % 20 == 0 or epoch == 0):
                 print(
@@ -471,25 +595,44 @@ class FinancialVAE(BaseGenerativeModel):
                     f"recon={losses['recon'][-1]:.4f} kl={losses['kl'][-1]:.4f} "
                     f"acf_r={losses['acf_r'][-1]:.4f} acf_abs={losses['acf_abs'][-1]:.4f} "
                     f"corr={losses['corr'][-1]:.4f} "
-                    f"df={losses['df'][-1]:.2f} beta={beta:.3f}"
+                    f"df={losses['df'][-1]:.2f} beta={beta:.3f} tf={tf_ratio:.2f}"
                 )
 
         # --- Cache aggregate posterior for generation ---
-        self._cache_aggregate_posterior(x_tensor, batch_size=max(batch_size, 256))
+        self._cache_aggregate_posterior(
+            x_tensor,
+            cond_tensor=cond_tensor,
+            batch_size=max(batch_size, 256),
+        )
         self.is_trained = True
         return losses
 
     @torch.no_grad()
-    def _cache_aggregate_posterior(self, x_tensor: torch.Tensor, batch_size: int = 256):
+    def _cache_aggregate_posterior(
+        self,
+        x_tensor: torch.Tensor,
+        cond_tensor: Optional[torch.Tensor] = None,
+        batch_size: int = 256,
+    ):
         self.encoder.eval()
-        loader = DataLoader(TensorDataset(x_tensor), batch_size=batch_size, shuffle=False)
+        if cond_tensor is not None:
+            loader = DataLoader(TensorDataset(x_tensor, cond_tensor), batch_size=batch_size, shuffle=False)
+        else:
+            loader = DataLoader(TensorDataset(x_tensor), batch_size=batch_size, shuffle=False)
         mus, logvars = [], []
-        for (b,) in loader:
+        conds = [] if cond_tensor is not None else None
+        for packed in loader:
+            if cond_tensor is not None:
+                b, c = packed
+                conds.append(c.cpu())
+            else:
+                (b,) = packed
             mu, logvar = self.encoder(b.to(self.device))
             mus.append(mu.cpu())
             logvars.append(logvar.cpu())
         self._agg_mu = torch.cat(mus, dim=0)
         self._agg_logvar = torch.cat(logvars, dim=0)
+        self._agg_cond = torch.cat(conds, dim=0) if conds is not None else None
 
     # ------------------------------------------------------------------
     # Generation
@@ -501,6 +644,8 @@ class FinancialVAE(BaseGenerativeModel):
         n_samples: int,
         seq_len: int | None = None,
         use_aggregate_posterior: bool = True,
+        cond: Optional[np.ndarray] = None,
+        regime: Optional[str] = None,
         deterministic: bool = False,
         **kwargs,
     ) -> np.ndarray:
@@ -512,6 +657,7 @@ class FinancialVAE(BaseGenerativeModel):
         else:
             original_len = None
 
+        idx = None
         if use_aggregate_posterior and self._agg_mu is not None:
             idx = torch.randint(0, self._agg_mu.size(0), (n_samples,))
             mu = self._agg_mu[idx].to(self.device)
@@ -520,7 +666,33 @@ class FinancialVAE(BaseGenerativeModel):
         else:
             z = torch.randn(n_samples, self.latent_dim, device=self.device)
 
-        x_gen = self.decoder.sample(z, deterministic=deterministic)
+        cond_t = None
+        if self.cond_dim > 0:
+            if regime is not None:
+                from src.data.regime_labels import get_regime_conditioning_vectors
+
+                vecs = get_regime_conditioning_vectors()
+                if regime not in vecs:
+                    raise ValueError(f"Unknown regime '{regime}'. Use one of {list(vecs.keys())}")
+                cond_arr = np.repeat(vecs[regime][None, :], n_samples, axis=0)
+                cond_t = torch.tensor(cond_arr, dtype=torch.float32, device=self.device)
+            elif cond is not None:
+                cond_arr = np.asarray(cond, dtype=np.float32)
+                if cond_arr.ndim == 1:
+                    cond_arr = np.repeat(cond_arr[None, :], n_samples, axis=0)
+                if cond_arr.shape != (n_samples, self.cond_dim):
+                    raise ValueError(
+                        f"cond must have shape ({n_samples}, {self.cond_dim}), got {cond_arr.shape}"
+                    )
+                cond_t = torch.tensor(cond_arr, dtype=torch.float32, device=self.device)
+            elif self._agg_cond is not None:
+                if idx is None:
+                    idx = torch.randint(0, self._agg_cond.size(0), (n_samples,))
+                cond_t = self._agg_cond[idx].to(self.device)
+            else:
+                cond_t = torch.zeros((n_samples, self.cond_dim), dtype=torch.float32, device=self.device)
+
+        x_gen = self.decoder.sample(z, cond=cond_t, deterministic=deterministic)
 
         if original_len is not None:
             self.decoder.seq_len = original_len
@@ -537,22 +709,68 @@ class FinancialVAE(BaseGenerativeModel):
             "decoder": self.decoder.state_dict(),
             "agg_mu": self._agg_mu,
             "agg_logvar": self._agg_logvar,
+            "agg_cond": self._agg_cond,
             "config": {
                 "n_features": self.n_features,
                 "seq_len": self.seq_len,
                 "hidden_dim": self.hidden_dim,
                 "latent_dim": self.latent_dim,
                 "n_layers": self.n_layers,
+                "dropout": self.dropout,
+                "cond_dim": self.cond_dim,
                 "factor_dim": self.factor_dim,
             },
         }, path)
 
     def load(self, path: str) -> None:
         ckpt = torch.load(path, map_location=self.device, weights_only=False)
+        cfg = ckpt.get("config", {})
+
+        ckpt_hidden = int(cfg.get("hidden_dim", self.hidden_dim))
+        ckpt_latent = int(cfg.get("latent_dim", self.latent_dim))
+        ckpt_layers = int(cfg.get("n_layers", self.n_layers))
+        ckpt_dropout = float(cfg.get("dropout", self.dropout))
+        ckpt_cond = int(cfg.get("cond_dim", self.cond_dim))
+        ckpt_factor = int(cfg.get("factor_dim", self.factor_dim))
+
+        need_rebuild = (
+            ckpt_hidden != self.hidden_dim
+            or ckpt_latent != self.latent_dim
+            or ckpt_layers != self.n_layers
+            or abs(ckpt_dropout - self.dropout) > 1e-12
+            or ckpt_cond != self.cond_dim
+            or ckpt_factor != self.factor_dim
+        )
+        if need_rebuild:
+            self.hidden_dim = ckpt_hidden
+            self.latent_dim = ckpt_latent
+            self.n_layers = ckpt_layers
+            self.dropout = ckpt_dropout
+            self.cond_dim = ckpt_cond
+            self.factor_dim = ckpt_factor
+            self.encoder = Encoder(
+                self.n_features,
+                self.hidden_dim,
+                self.latent_dim,
+                self.n_layers,
+                dropout=self.dropout,
+            ).to(self.device)
+            self.decoder = AutoregressiveDecoder(
+                self.latent_dim,
+                self.hidden_dim,
+                self.n_features,
+                self.seq_len,
+                self.n_layers,
+                dropout=self.dropout,
+                cond_dim=self.cond_dim,
+                factor_dim=self.factor_dim,
+            ).to(self.device)
+
         self.encoder.load_state_dict(ckpt["encoder"])
         self.decoder.load_state_dict(ckpt["decoder"])
         self._agg_mu = ckpt.get("agg_mu", None)
         self._agg_logvar = ckpt.get("agg_logvar", None)
+        self._agg_cond = ckpt.get("agg_cond", None)
         self.is_trained = True
 
 
