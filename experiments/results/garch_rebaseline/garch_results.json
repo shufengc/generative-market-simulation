@@ -1,0 +1,185 @@
+[
+  {
+    "seed": 42,
+    "sf_results": [
+      {
+        "name": "Fat Tails",
+        "hill_alpha_syn": 3.3983,
+        "hill_alpha_real": 7.8353,
+        "hill_alpha_gap": 4.437,
+        "tail_ks_stat": 0.8493,
+        "tail_ks_p": 0.0,
+        "pass": false
+      },
+      {
+        "name": "Volatility Clustering",
+        "garch_gamma_syn": 0.9984,
+        "garch_gamma_real": 1.0022,
+        "garch_gamma_gap": 0.0037,
+        "arch_lm_p": 0.0,
+        "pass": true
+      },
+      {
+        "name": "Leverage Effect",
+        "method": "gjr_garch",
+        "gamma_syn": -0.0215,
+        "pass": false,
+        "gamma_real": 0.0666
+      },
+      {
+        "name": "Long Memory (Hurst)",
+        "hurst_syn": 0.6032,
+        "hurst_real": 1.0115,
+        "hurst_gap": 0.4083,
+        "pass": false
+      },
+      {
+        "name": "Cross-Asset Correlations",
+        "lambda1_syn": 5.6918,
+        "lambda1_real": 7.8273,
+        "lambda1_rel_gap": 0.2728,
+        "rolling_corr_std_mean": 0.1303,
+        "pass": false
+      },
+      {
+        "name": "No Raw Autocorrelation",
+        "ljung_box_p_min": 0.0,
+        "ljung_box_stat_max": 171.4627,
+        "maa_lags_1_20": 0.009532,
+        "pass": false,
+        "maa_lags_1_20_real": 0.023518
+      }
+    ],
+    "sf_passed": 1,
+    "train_time_s": 16.57,
+    "gen_time_s": 0.46,
+    "mmd": 0.037995,
+    "wasserstein_1d": 3.504229,
+    "ks_stat": 0.1398,
+    "ks_pvalue": 0.0,
+    "discriminative_score": 1.0,
+    "correlation_matrix_distance": 2.9601
+  },
+  {
+    "seed": 123,
+    "sf_results": [
+      {
+        "name": "Fat Tails",
+        "hill_alpha_syn": 3.4651,
+        "hill_alpha_real": 7.8353,
+        "hill_alpha_gap": 4.3702,
+        "tail_ks_stat": 0.8495,
+        "tail_ks_p": 0.0,
+        "pass": false
+      },
+      {
+        "name": "Volatility Clustering",
+        "garch_gamma_syn": 0.9943,
+        "garch_gamma_real": 1.0022,
+        "garch_gamma_gap": 0.0079,
+        "arch_lm_p": 0.0,
+        "pass": true
+      },
+      {
+        "name": "Leverage Effect",
+        "method": "gjr_garch",
+        "gamma_syn": 0.0071,
+        "pass": true,
+        "gamma_real": 0.0666
+      },
+      {
+        "name": "Long Memory (Hurst)",
+        "hurst_syn": 0.5782,
+        "hurst_real": 1.0115,
+        "hurst_gap": 0.4333,
+        "pass": false
+      },
+      {
+        "name": "Cross-Asset Correlations",
+        "lambda1_syn": 5.7576,
+        "lambda1_real": 7.8273,
+        "lambda1_rel_gap": 0.2644,
+        "rolling_corr_std_mean": 0.132,
+        "pass": false
+      },
+      {
+        "name": "No Raw Autocorrelation",
+        "ljung_box_p_min": 0.0,
+        "ljung_box_stat_max": 352.4287,
+        "maa_lags_1_20": 0.013391,
+        "pass": false,
+        "maa_lags_1_20_real": 0.023518
+      }
+    ],
+    "sf_passed": 2,
+    "train_time_s": 16.49,
+    "gen_time_s": 0.45,
+    "mmd": 0.031322,
+    "wasserstein_1d": 3.4275,
+    "ks_stat": 0.128,
+    "ks_pvalue": 0.0,
+    "discriminative_score": 1.0,
+    "correlation_matrix_distance": 2.8988
+  },
+  {
+    "seed": 456,
+    "sf_results": [
+      {
+        "name": "Fat Tails",
+        "hill_alpha_syn": 2.8078,
+        "hill_alpha_real": 7.8353,
+        "hill_alpha_gap": 5.0275,
+        "tail_ks_stat": 0.8496,
+        "tail_ks_p": 0.0,
+        "pass": false
+      },
+      {
+        "name": "Volatility Clustering",
+        "garch_gamma_syn": 0.9849,
+        "garch_gamma_real": 1.0022,
+        "garch_gamma_gap": 0.0172,
+        "arch_lm_p": 0.0,
+        "pass": true
+      },
+      {
+        "name": "Leverage Effect",
+        "method": "gjr_garch",
+        "gamma_syn": -0.0044,
+        "pass": false,
+        "gamma_real": 0.0666
+      },
+      {
+        "name": "Long Memory (Hurst)",
+        "hurst_syn": 0.5891,
+        "hurst_real": 1.0115,
+        "hurst_gap": 0.4223,
+        "pass": false
+      },
+      {
+        "name": "Cross-Asset Correlations",
+        "lambda1_syn": 5.6424,
+        "lambda1_real": 7.8273,
+        "lambda1_rel_gap": 0.2791,
+        "rolling_corr_std_mean": 0.1305,
+        "pass": false
+      },
+      {
+        "name": "No Raw Autocorrelation",
+        "ljung_box_p_min": 0.0,
+        "ljung_box_stat_max": 326.7758,
+        "maa_lags_1_20": 0.012894,
+        "pass": false,
+        "maa_lags_1_20_real": 0.023518
+      }
+    ],
+    "sf_passed": 1,
+    "train_time_s": 16.59,
+    "gen_time_s": 0.47,
+    "mmd": 0.055376,
+    "wasserstein_1d": 3.74733,
+    "ks_stat": 0.15,
+    "ks_pvalue": 0.0,
+    "discriminative_score": 1.0,
+    "correlation_matrix_distance": 3.057
+  }
+]
