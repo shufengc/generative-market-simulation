@@ -1,0 +1,4 @@
+model,seed,n_params,epochs,sf_passed,mmd,wasserstein_1d,discriminative_score,correlation_matrix_distance,train_time_s
+default,42,12109824,400,5,0.020194,0.260166,0.7329,1.9607,381.28
+default,123,12109824,400,5,0.049434,0.209044,0.7374,2.0736,1066.53
+default,456,12109824,400,5,0.009986,0.143056,0.7294,2.121,544.53
