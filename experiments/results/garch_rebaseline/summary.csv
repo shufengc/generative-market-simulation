@@ -1,0 +1,4 @@
+seed,sf_passed,mmd,wasserstein_1d,discriminative_score,correlation_matrix_distance,train_time_s,gen_time_s
+42,1,0.037995,3.504229,1.0,2.9601,16.57,0.46
+123,2,0.031322,3.4275,1.0,2.8988,16.49,0.45
+456,1,0.055376,3.74733,1.0,3.057,16.59,0.47
