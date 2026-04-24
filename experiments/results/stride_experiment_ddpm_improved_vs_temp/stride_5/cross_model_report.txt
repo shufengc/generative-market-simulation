@@ -1,0 +1,99 @@
+======================================================================
+CROSS-MODEL ANALYSIS REPORT
+======================================================================
+
+## Overall Ranking (Borda Count)
+--------------------------------------------------
+  #1  ddpm_improved  (Borda score: 13)
+  #2  ddpm_improved_temp  (Borda score: 26)
+
+## Per-Model Metrics
+--------------------------------------------------
+
+  DDPM_IMPROVED
+    sf_passed                     : 5
+    mmd                           : 0.029993
+    wasserstein_1d                : 0.173263
+    sig_w1                        : 24.402567
+    ks_stat                       : 0.093000
+    discriminative_score          : 0.618100
+    correlation_matrix_distance   : 3.622900
+    proposal_criteria_passed      : 3
+    hill_diff                     : 1.385000
+    persistence_diff              : 0.014700
+    hurst_diff                    : 0.125200
+    eigenvalue_rel_diff           : 0.370600
+    spectral_distance             : 3.356900
+    temporal_coherence            : 0.346700
+
+  DDPM_IMPROVED_TEMP
+    sf_passed                     : 5
+    mmd                           : 0.035994
+    wasserstein_1d                : 0.207572
+    sig_w1                        : 26.104763
+    ks_stat                       : 0.119600
+    discriminative_score          : 0.711000
+    correlation_matrix_distance   : 4.550700
+    proposal_criteria_passed      : 1
+    hill_diff                     : 1.632600
+    persistence_diff              : 0.051500
+    hurst_diff                    : 0.136000
+    eigenvalue_rel_diff           : 0.458800
+    spectral_distance             : 4.152100
+    temporal_coherence            : 0.173300
+
+## Bootstrap Confidence Intervals (95%)
+--------------------------------------------------
+
+  DDPM_IMPROVED
+    mmd                      : 0.0142  [0.0012, 0.0430]
+    wasserstein              : 0.1658  [0.0564, 0.3678]
+    ks_stat                  : 0.0635  [0.0251, 0.1125]
+    discriminative_score     : 0.9133  [0.8911, 0.9315]
+    corr_distance            : 3.6385  [3.2580, 4.0836]
+
+  DDPM_IMPROVED_TEMP
+    mmd                      : 0.0160  [0.0016, 0.0457]
+    wasserstein              : 0.1576  [0.0714, 0.3542]
+    ks_stat                  : 0.0620  [0.0307, 0.0998]
+    discriminative_score     : 0.9281  [0.9122, 0.9410]
+    corr_distance            : 4.5239  [4.2243, 4.8258]
+
+## Per-Regime Performance
+--------------------------------------------------
+
+  Regime: Low Vol
+    ddpm_improved  SF=5/6  MMD=0.0300  Disc=0.71
+    ddpm_improved_temp  SF=5/6  MMD=0.0360  Disc=0.82
+
+  Regime: Mid Vol
+    ddpm_improved  SF=5/6  MMD=0.0126  Disc=0.72
+    ddpm_improved_temp  SF=5/6  MMD=0.0166  Disc=0.80
+
+  Regime: High Vol
+    ddpm_improved  SF=5/6  MMD=0.0027  Disc=0.79
+    ddpm_improved_temp  SF=5/6  MMD=0.0031  Disc=0.80
+
+## Proposal Table 1 Criteria (Industrial-Grade)
+--------------------------------------------------
+  Model           Hill a   Tail KS   GARCH g     GJR t   Hurst H    L1 rel
+  ddpm_improved    1.3850    0.0000    0.0147    0.0532    0.6906    0.3706
+  ddpm_improved_temp    1.6326    0.0000    0.0515   -0.0299    0.6798    0.4588
+
+  Thresholds: Hill da<0.1  TailKS p>0.05  GARCH dg<0.02  GJR t>0  Hurst in(0.5,1)  L1 rel<5%
+
+## Temporal Coherence (Long-Horizon Quality)
+--------------------------------------------------
+  Model          Score    ACF    Vol     MR  CumKS    L-L  Result
+  ddpm_improved    0.35   0.50   0.17      0   0.17   0.90    FAIL
+  ddpm_improved_temp    0.17   0.33   0.17      0   0.17   0.20    FAIL
+
+  Sub-tests: ACF=autocorrelation profile, Vol=rolling volatility,
+  MR=mean-reversion half-life, CumKS=cumulative return KS, L-L=lead-lag sign
+
+## Computational Cost
+--------------------------------------------------
+    ddpm_improved: 2.4s
+    ddpm_improved_temp: 2.4s
+
+======================================================================

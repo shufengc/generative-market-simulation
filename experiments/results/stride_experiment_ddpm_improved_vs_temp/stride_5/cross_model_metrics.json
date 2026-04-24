@@ -1,0 +1,34 @@
+{
+  "ddpm_improved": {
+    "sf_passed": 5,
+    "mmd": 0.029993,
+    "wasserstein_1d": 0.173263,
+    "sig_w1": 24.402567,
+    "ks_stat": 0.093,
+    "discriminative_score": 0.6181,
+    "correlation_matrix_distance": 3.6229,
+    "proposal_criteria_passed": 3,
+    "hill_diff": 1.385,
+    "persistence_diff": 0.0147,
+    "hurst_diff": 0.1252,
+    "eigenvalue_rel_diff": 0.3706,
+    "spectral_distance": 3.3569,
+    "temporal_coherence": 0.3467
+  },
+  "ddpm_improved_temp": {
+    "sf_passed": 5,
+    "mmd": 0.035994,
+    "wasserstein_1d": 0.207572,
+    "sig_w1": 26.104763,
+    "ks_stat": 0.1196,
+    "discriminative_score": 0.711,
+    "correlation_matrix_distance": 4.5507,
+    "proposal_criteria_passed": 1,
+    "hill_diff": 1.6326,
+    "persistence_diff": 0.0515,
+    "hurst_diff": 0.136,
+    "eigenvalue_rel_diff": 0.4588,
+    "spectral_distance": 4.1521,
+    "temporal_coherence": 0.1733
+  }
+}

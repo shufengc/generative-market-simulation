@@ -1,0 +1,29 @@
+{
+  "strides": [
+    1,
+    2,
+    3,
+    5,
+    10,
+    20
+  ],
+  "models": [
+    "ddpm_improved",
+    "ddpm_improved_temp"
+  ],
+  "epochs": 400,
+  "n_samples": 500,
+  "n_bootstrap": 50,
+  "batch_size": 64,
+  "lr": 0.0002,
+  "device": "cuda",
+  "retrain": true,
+  "stride_dirs": [
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment_ddpm_improved_vs_temp/stride_1",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment_ddpm_improved_vs_temp/stride_2",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment_ddpm_improved_vs_temp/stride_3",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment_ddpm_improved_vs_temp/stride_5",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment_ddpm_improved_vs_temp/stride_10",
+    "/home/lyz/ELEN4904/Project/experiments/results/stride_experiment_ddpm_improved_vs_temp/stride_20"
+  ]
+}

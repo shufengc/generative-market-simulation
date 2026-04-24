@@ -1,0 +1,3 @@
+,correlation_matrix_distance,discriminative_score,eigenvalue_rel_diff,hill_diff,hurst_diff,ks_stat,mmd,persistence_diff,proposal_criteria_passed,sf_passed,sig_w1,spectral_distance,wasserstein_1d,borda_score,overall_rank
+ddpm_improved,1,1,1,1,1,1,1,1,1,1,1,1,1,13,1
+ddpm_improved_temp,2,2,2,2,2,2,2,2,2,2,2,2,2,26,2
