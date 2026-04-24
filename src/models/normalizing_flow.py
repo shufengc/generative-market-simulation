@@ -339,7 +339,8 @@ class NormalizingFlowModel(BaseGenerativeModel):
             self._rebuild_flow()
 
         dataset = TensorDataset(x)
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True,
+                            pin_memory=(self.device != "cpu"))
         optimizer = torch.optim.AdamW(self.flow.parameters(), lr=lr, weight_decay=1e-5)
 
         # Linear warm-up then cosine decay

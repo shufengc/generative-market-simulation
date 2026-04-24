@@ -20,6 +20,12 @@ can instantiate the baseline or any combination of improvements:
   9.  use_acf_guidance   -- inference-time ACF guidance during DDIM sampling
   10. use_wavelet        -- wavelet-domain diffusion (train on wavelet coefficients)
   11. use_student_t_noise -- Student-t noise in forward process instead of Gaussian
+
+  Training enhancements:
+  - Min-SNR-gamma loss weighting (Hang et al. 2023) for balanced timestep training
+  - Linear warmup + cosine annealing LR schedule
+  - Best model checkpoint restore
+  - DDIM sampling with configurable eta (stochastic vs deterministic)
 """
 
 from __future__ import annotations
@@ -599,9 +605,26 @@ class ImprovedDDPM(BaseGenerativeModel):
         if self.use_student_t_noise:
             dist = torch.distributions.StudentT(df=self.student_t_df)
             noise = dist.sample(shape).to(device)
-            noise = noise / (self.student_t_df / (self.student_t_df - 2)) ** 0.5
+            # Normalize to unit variance; guard against df <= 2 where variance is infinite
+            if self.student_t_df > 2:
+                noise = noise / (self.student_t_df / (self.student_t_df - 2)) ** 0.5
+            else:
+                noise = noise / (noise.std() + 1e-8)
             return noise
         return torch.randn(shape, device=device)
+
+    def _snr_weight(self, t: torch.Tensor, gamma: float = 5.0) -> torch.Tensor:
+        """Min-SNR-gamma weighting (Hang et al. 2023).
+
+        SNR(t) = alpha_bar(t) / (1 - alpha_bar(t)).
+        Weight = min(SNR(t), gamma) / SNR(t).
+        This down-weights high-SNR (easy, low-t) and high-noise (hard, high-t) steps,
+        focusing training on the most informative timesteps.
+        """
+        alpha_bar_t = self.alpha_bar.gather(-1, t)
+        snr = alpha_bar_t / (1.0 - alpha_bar_t).clamp(min=1e-8)
+        weight = torch.clamp(snr, max=gamma) / snr.clamp(min=1e-8)
+        return weight
 
     def q_sample(self, x0: torch.Tensor, t: torch.Tensor,
                  noise: torch.Tensor | None = None,
@@ -699,7 +722,11 @@ class ImprovedDDPM(BaseGenerativeModel):
 
         pred = self._net_with_self_cond(
             self.net, x_noisy, t, cond, x0_self_cond, local_vol)
-        loss = F.mse_loss(pred, target)
+
+        # Per-sample MSE with Min-SNR-gamma weighting
+        per_sample_loss = F.mse_loss(pred, target, reduction="none").mean(dim=[1, 2])
+        snr_w = self._snr_weight(t, gamma=5.0)
+        loss = (snr_w * per_sample_loss).mean()
 
         if self.use_aux_sf_loss and self._train_step_counter % 5 == 0:
             x0_pred = self._predict_x0(x_noisy, t, pred).clamp(-5, 5)
@@ -718,7 +745,8 @@ class ImprovedDDPM(BaseGenerativeModel):
 
     def train(self, data: np.ndarray, cond: np.ndarray | None = None,
               epochs: int = 200, batch_size: int = 64, lr: float = 2e-4,
-              ema_decay: float = 0.9999, **kwargs) -> dict:
+              ema_decay: float = 0.9999, warmup_epochs: int = 10,
+              **kwargs) -> dict:
         self.net.train()
 
         train_data = data
@@ -757,15 +785,27 @@ class ImprovedDDPM(BaseGenerativeModel):
 
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             drop_last=True)
-        optimizer = torch.optim.AdamW(self.net.parameters(), lr=lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=epochs, eta_min=lr * 0.01)
+        optimizer = torch.optim.AdamW(self.net.parameters(), lr=lr, weight_decay=1e-5)
+
+        # Linear warmup then cosine decay
+        def lr_lambda(epoch):
+            if epoch < warmup_epochs:
+                return (epoch + 1) / max(warmup_epochs, 1)
+            progress = (epoch - warmup_epochs) / max(epochs - warmup_epochs, 1)
+            return 0.5 * (1 + math.cos(math.pi * progress))
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
         self.ema = EMA(self.net, decay=ema_decay)
 
         losses = []
+        best_loss = float("inf")
+        best_state = None
+        best_ema_state = None
+
         for epoch in range(epochs):
             epoch_loss = 0.0
+            n_batches = 0
             for batch_data in loader:
                 if cond_tensor is not None:
                     batch_x, batch_c = batch_data
@@ -777,6 +817,12 @@ class ImprovedDDPM(BaseGenerativeModel):
                     batch_c = None
 
                 batch_x = batch_x.to(self.device)
+
+                # Training noise annealing: add small noise early for stability
+                if epoch < epochs // 3:
+                    noise_scale = 1e-4 * (1 - epoch / (epochs // 3))
+                    batch_x = batch_x + torch.randn_like(batch_x) * noise_scale
+
                 t = torch.randint(0, self.T, (batch_x.shape[0],),
                                   device=self.device)
                 loss = self.p_losses(batch_x, t, batch_c)
@@ -787,13 +833,32 @@ class ImprovedDDPM(BaseGenerativeModel):
                 optimizer.step()
                 self.ema.update(self.net)
                 epoch_loss += loss.item()
+                n_batches += 1
 
             scheduler.step()
-            avg = epoch_loss / max(len(loader), 1)
+            avg = epoch_loss / max(n_batches, 1)
             losses.append(avg)
+
+            # Track best model
+            if avg < best_loss:
+                best_loss = avg
+                best_state = {k: v.cpu().clone()
+                              for k, v in self.net.state_dict().items()}
+                best_ema_state = {k: v.cpu().clone()
+                                  for k, v in self.ema.state_dict().items()}
+
             if (epoch + 1) % 20 == 0 or epoch == 0:
+                current_lr = optimizer.param_groups[0]["lr"]
                 print(f"  [{self.name}] Epoch {epoch+1:4d}/{epochs} | "
-                      f"loss={avg:.6f} | lr={scheduler.get_last_lr()[0]:.2e}")
+                      f"loss={avg:.6f} | lr={current_lr:.2e}")
+
+        # Restore best model
+        if best_state is not None:
+            self.net.load_state_dict(
+                {k: v.to(self.device) for k, v in best_state.items()})
+            if best_ema_state is not None:
+                self.ema.load_state_dict(
+                    {k: v.to(self.device) for k, v in best_ema_state.items()})
 
         self.is_trained = True
         return {"losses": losses}
@@ -801,7 +866,7 @@ class ImprovedDDPM(BaseGenerativeModel):
     def generate(self, n_samples: int, seq_len: int | None = None,
                  cond: np.ndarray | None = None, use_ddim: bool = True,
                  ddim_steps: int = 50, guidance_scale: float = 2.0,
-                 **kwargs) -> np.ndarray:
+                 ddim_eta: float = 0.3, **kwargs) -> np.ndarray:
         net = self.ema.shadow if self.ema is not None else self.net
         net.eval()
 
@@ -819,7 +884,7 @@ class ImprovedDDPM(BaseGenerativeModel):
 
         if self.use_acf_guidance:
             if use_ddim:
-                x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale)
+                x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale, ddim_eta)
             else:
                 x0_self_cond = None
                 for t_idx in reversed(range(self.T)):
@@ -828,7 +893,7 @@ class ImprovedDDPM(BaseGenerativeModel):
         else:
             with torch.no_grad():
                 if use_ddim:
-                    x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale)
+                    x = self._ddim_sample(x, net, ddim_steps, cond_t, guidance_scale, ddim_eta)
                 else:
                     x0_self_cond = None
                     for t_idx in reversed(range(self.T)):
@@ -900,7 +965,14 @@ class ImprovedDDPM(BaseGenerativeModel):
 
     def _ddim_sample(self, x: torch.Tensor, net: nn.Module, n_steps: int,
                      cond: torch.Tensor | None,
-                     guidance_scale: float) -> torch.Tensor:
+                     guidance_scale: float, eta: float = 0.0) -> torch.Tensor:
+        """DDIM sampler with configurable eta.
+
+        eta=0: fully deterministic (original DDIM).
+        eta=1: equivalent to DDPM stochastic sampling.
+        eta in (0,1): interpolates -- adds controlled noise for diversity
+                      while keeping trajectories partially deterministic.
+        """
         n_steps = min(n_steps, self.T)
         indices = np.linspace(0, self.T - 1, n_steps, dtype=int)
         timesteps = list(reversed(indices.tolist()))
@@ -937,8 +1009,18 @@ class ImprovedDDPM(BaseGenerativeModel):
             else:
                 alpha_bar_next = torch.tensor(1.0, device=self.device)
 
-            x = (alpha_bar_next.sqrt() * x0_pred +
-                 (1 - alpha_bar_next).sqrt() * pred_noise)
+            # DDIM update with eta-controlled stochasticity
+            if eta > 0 and i < len(timesteps) - 1:
+                sigma = (eta * ((1 - alpha_bar_next) / (1 - alpha_bar_t).clamp(min=1e-8)
+                                * (1 - alpha_bar_t / alpha_bar_next)).clamp(min=0)).sqrt()
+                dir_coeff = (1 - alpha_bar_next - sigma ** 2).clamp(min=0).sqrt()
+                noise = torch.randn_like(x)
+                x = (alpha_bar_next.sqrt() * x0_pred +
+                     dir_coeff * pred_noise +
+                     sigma * noise)
+            else:
+                x = (alpha_bar_next.sqrt() * x0_pred +
+                     (1 - alpha_bar_next).sqrt() * pred_noise)
 
             if self.use_acf_guidance:
                 x = self._acf_guidance_step(x, net, t, cond, i, n_steps)
