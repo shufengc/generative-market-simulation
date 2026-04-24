@@ -81,7 +81,12 @@ def run_single(windows: np.ndarray, cond: np.ndarray | None,
     print(f"  Training time: {train_time:.1f}s ({train_time/60:.1f} min)")
 
     t1 = time.time()
-    syn = model.generate(n_samples=n_gen, cond=cond)
+    # Sample n_gen conditioning vectors from the available pool
+    gen_cond: np.ndarray | None = None
+    if cond is not None:
+        idx = np.random.choice(len(cond), size=n_gen, replace=(n_gen > len(cond)))
+        gen_cond = cond[idx]
+    syn = model.generate(n_samples=n_gen, cond=gen_cond)
     gen_time = time.time() - t1
     print(f"  Generation time: {gen_time:.1f}s, shape: {syn.shape}")
 
