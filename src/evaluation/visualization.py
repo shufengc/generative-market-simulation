@@ -14,6 +14,7 @@ Produces:
 
 from __future__ import annotations
 
+import math
 import os
 
 import numpy as np
@@ -355,3 +356,172 @@ def create_comparison_dashboard(
                                      save_path=os.path.join(save_dir, "comparison_table.png"))
 
     print(f"Dashboard saved to {save_dir}/")
+
+
+def plot_garch_diagnostics(real: np.ndarray, synthetic: np.ndarray,
+                            max_lag: int = 30, save_path: str | None = None):
+    """Four-panel GARCH diagnostics: return distribution, ACF(r²), rolling vol, leverage profile.
+
+    Args:
+        real:      1-D array of real returns (flat).
+        synthetic: 1-D array of synthetic returns (flat).
+        max_lag:   Maximum ACF lag for the squared-return panel.
+    """
+    def _acf_sq(x, max_lag):
+        x2 = x ** 2 - (x ** 2).mean()
+        var = x2.var()
+        return np.array([
+            float(np.mean(x2[lag:] * x2[:-lag]) / var) if var > 0 else 0.0
+            for lag in range(1, max_lag + 1)
+        ])
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+
+    # --- Panel 1: Return distribution ---
+    ax = axes[0, 0]
+    ax.hist(real, bins=120, density=True, alpha=0.5, label="Real", color="#2196F3")
+    ax.hist(synthetic, bins=120, density=True, alpha=0.5, label="GARCH", color="#FF9800")
+    x_grid = np.linspace(min(real.min(), synthetic.min()),
+                          max(real.max(), synthetic.max()), 300)
+    from scipy.stats import norm
+    ax.plot(x_grid, norm.pdf(x_grid, real.mean(), real.std()), "k--", lw=1, label="Normal fit")
+    ax.set_title("Return Distribution", fontweight="bold")
+    ax.set_xlabel("Return")
+    ax.set_ylabel("Density")
+    ax.legend(fontsize=8)
+
+    # --- Panel 2: ACF of squared returns ---
+    ax = axes[0, 1]
+    lags = np.arange(1, max_lag + 1)
+    acf_real = _acf_sq(real, max_lag)
+    acf_syn  = _acf_sq(synthetic, max_lag)
+    ax.bar(lags - 0.2, acf_real, width=0.4, label="Real",  color="#2196F3", alpha=0.7)
+    ax.bar(lags + 0.2, acf_syn,  width=0.4, label="GARCH", color="#FF9800", alpha=0.7)
+    conf = 1.96 / math.sqrt(len(real))
+    ax.axhline(conf,  color="gray", ls="--", lw=0.8)
+    ax.axhline(-conf, color="gray", ls="--", lw=0.8)
+    ax.axhline(0, color="black", lw=0.5)
+    ax.set_title("ACF of Squared Returns (Volatility Clustering)", fontweight="bold")
+    ax.set_xlabel("Lag")
+    ax.set_ylabel("ACF(r²)")
+    ax.legend(fontsize=8)
+
+    # --- Panel 3: Rolling 20-day volatility ---
+    ax = axes[1, 0]
+    window = 20
+    real_ser = pd.Series(real)
+    syn_ser  = pd.Series(synthetic)
+    roll_real = real_ser.rolling(window).std() * math.sqrt(252)
+    roll_syn  = syn_ser.rolling(window).std()  * math.sqrt(252)
+    ax.plot(roll_real.values, color="#2196F3", lw=0.8, alpha=0.8, label="Real")
+    ax.plot(roll_syn.values,  color="#FF9800", lw=0.8, alpha=0.8, label="GARCH")
+    ax.set_title(f"Rolling {window}-Day Annualised Volatility", fontweight="bold")
+    ax.set_xlabel("Observation")
+    ax.set_ylabel("Ann. Vol.")
+    ax.legend(fontsize=8)
+
+    # --- Panel 4: Leverage-effect profile (signed-shock vs next-period vol) ---
+    ax = axes[1, 1]
+    for arr, label, color in [(real, "Real", "#2196F3"), (synthetic, "GARCH", "#FF9800")]:
+        if len(arr) < 3:
+            continue
+        shocks   = arr[:-1]
+        next_vol = np.abs(arr[1:])
+        bins     = np.linspace(np.percentile(shocks, 2), np.percentile(shocks, 98), 25)
+        idx      = np.digitize(shocks, bins)
+        bin_centers = [(bins[b - 1] + bins[b]) / 2 if 1 <= b < len(bins) else np.nan
+                       for b in idx]
+        df_tmp = pd.DataFrame({"center": bin_centers, "nv": next_vol}).dropna()
+        grp = df_tmp.groupby("center")["nv"].mean()
+        ax.plot(grp.index, grp.values, "o-", ms=4, lw=1.2, label=label, color=color, alpha=0.85)
+    ax.axvline(0, color="gray", lw=0.8, ls="--")
+    ax.set_title("Leverage-Effect Profile", fontweight="bold")
+    ax.set_xlabel("Return shock (t)")
+    ax.set_ylabel("Mean |return| (t+1)")
+    ax.legend(fontsize=8)
+
+    fig.suptitle("GARCH Diagnostics", fontsize=14, fontweight="bold")
+    fig.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return fig
+
+
+def plot_conditional_volatility(returns: np.ndarray, cond_vol: np.ndarray,
+                                 title: str = "Conditional Volatility",
+                                 save_path: str | None = None):
+    """Two-panel plot: return time-series (with ±2σ band) and conditional volatility.
+
+    Args:
+        returns:  1-D array of returns.
+        cond_vol: 1-D array of conditional volatility estimates (same length).
+    """
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+
+    t = np.arange(len(returns))
+
+    ax1.plot(t, returns, lw=0.6, color="#2196F3", alpha=0.8, label="Returns")
+    ax1.fill_between(t, -2 * cond_vol, 2 * cond_vol,
+                     color="#FF9800", alpha=0.25, label="±2σ band")
+    ax1.axhline(0, color="black", lw=0.4)
+    ax1.set_ylabel("Return")
+    ax1.set_title(title, fontweight="bold")
+    ax1.legend(fontsize=9)
+
+    ax2.plot(t, cond_vol, lw=0.8, color="#FF9800", label="Cond. Vol (σ_t)")
+    ax2.set_ylabel("Conditional Volatility")
+    ax2.set_xlabel("Observation")
+    ax2.legend(fontsize=9)
+
+    fig.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return fig
+
+
+def plot_garch_param_summary(models_fitted: list[dict], save_path: str | None = None):
+    """Bar-chart summary of fitted GARCH/EGARCH parameters (ω, α, β, γ) per asset.
+
+    Args:
+        models_fitted: List of dicts as stored in GARCHModel.models_fitted
+                       [{"params": {...}, "success": bool, "vol_type": str}, ...].
+    """
+    n = len(models_fitted)
+    asset_ids = list(range(n))
+
+    omega  = [m["params"].get("omega",    np.nan) if m["success"] else np.nan for m in models_fitted]
+    alpha  = [m["params"].get("alpha[1]", np.nan) if m["success"] else np.nan for m in models_fitted]
+    beta   = [m["params"].get("beta[1]",  np.nan) if m["success"] else np.nan for m in models_fitted]
+    gamma  = [m["params"].get("gamma[1]", np.nan) if m["success"] else np.nan for m in models_fitted]
+
+    fig, axes = plt.subplots(4, 1, figsize=(max(8, n * 0.5 + 2), 10), sharex=True)
+    bar_kw = dict(edgecolor="white", linewidth=0.5)
+
+    axes[0].bar(asset_ids, omega, color="#2196F3", **bar_kw)
+    axes[0].set_ylabel("ω (omega)")
+    axes[0].set_title("GARCH Parameter Summary per Asset", fontweight="bold")
+
+    axes[1].bar(asset_ids, alpha, color="#4CAF50", **bar_kw)
+    axes[1].set_ylabel("α (alpha)")
+    axes[1].axhline(0, color="black", lw=0.4)
+
+    axes[2].bar(asset_ids, beta, color="#FF9800", **bar_kw)
+    axes[2].set_ylabel("β (beta)")
+    axes[2].axhline(0.9, color="gray", ls="--", lw=0.7, label="β=0.9")
+    axes[2].legend(fontsize=7)
+
+    axes[3].bar(asset_ids, gamma, color="#E91E63", **bar_kw)
+    axes[3].set_ylabel("γ (gamma / leverage)")
+    axes[3].axhline(0, color="black", lw=0.4)
+    axes[3].set_xlabel("Asset index")
+
+    fig.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return fig
