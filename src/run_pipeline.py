@@ -134,6 +134,15 @@ def step_train(data_dir: str, models_to_train: list[str],
         elif model_name == "ddpm_improved":
             from src.models.ddpm_improved import ImprovedDDPM
             is_quick = epochs < 100
+            # Phase 7: optional decorrelation regularizer (targets SF6).
+            # Enable with env var: DDPM_DECORR_WEIGHT=0.05 (default 0 = off).
+            decorr_w = float(os.environ.get("DDPM_DECORR_WEIGHT", "0") or 0)
+            decorr_lag = int(os.environ.get("DDPM_DECORR_MAX_LAG", "3") or 3)
+            decorr_tfrac = float(os.environ.get("DDPM_DECORR_T_FRAC", "0.5") or 0.5)
+            use_decorr = decorr_w > 0
+            if use_decorr:
+                print(f"  [Phase7] decorr_reg ON: weight={decorr_w} "
+                      f"max_lag={decorr_lag} t_frac={decorr_tfrac}")
             model = ImprovedDDPM(
                 n_features=n_features, seq_len=seq_len,
                 cond_dim=cond_dim, device=device,
@@ -144,6 +153,11 @@ def step_train(data_dir: str, models_to_train: list[str],
                 use_vpred=True,
                 use_student_t_noise=True,
                 student_t_df=5.0,
+                # Phase 7 flags (pass through; no-op if decorr_w == 0)
+                use_decorr_reg=use_decorr,
+                decorr_weight=decorr_w,
+                decorr_max_lag=decorr_lag,
+                decorr_t_frac=decorr_tfrac,
             )
             history = model.train(windows, cond=cond, epochs=epochs, batch_size=batch_size, lr=lr)
             model.save(os.path.join(CHECKPOINTS_DIR, "ddpm_improved.pt"))
