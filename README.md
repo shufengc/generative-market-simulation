@@ -88,23 +88,29 @@ Models are presented in the project order used by the demo:
 
 ### Cross-Model Comparison Summary
 
-Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows with stride=1 (5,293 windows). Evaluated with an updated stylized facts framework (Hill estimator for fat tails, GARCH(1,1) for volatility clustering, Hurst R/S for long memory, max-eigenvalue for cross-asset correlations).
+Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows with stride=1 (~5,300 windows). All models evaluated under a unified framework (`stylized_facts.run_all_tests()`), 3 seeds (42, 123, 456), 400 epochs.
 
 | Model | Stylized Facts | MMD | Wasserstein-1 | Disc. Score | Corr. Dist. |
 |-------|:--------------:|:---:|:-------------:|:-----------:|:-----------:|
 | **DDPM (v-pred + Student-t)** | **5 / 6** | **0.006** | **0.111** | 0.85 | **1.79** |
-| **DDPM (v-prediction)** | **5 / 6** | 0.037 | 0.148 | 0.93 | 1.87 |
-| **NormFlow (RealNVP)** | **5 / 6** | 0.052 | 0.251 | **0.54** | 8.03 |
-| **TimeGAN** | 4 / 6 | 0.065 | 0.303 | 0.89 | 7.77 |
-| **GARCH** | 4 / 6 | 0.281 | 0.440 | 1.00 | 4.11 |
-| **VAE** | 3 / 6 | 0.415 | 0.466 | 1.00 | 4.50 |
+| **NormFlow (RealNVP)** | **5 / 6** | 0.027 | 0.204 | 0.73 | 2.05 |
+| **TimeGAN** | 4 / 6 | 0.110 | — | 1.00 | — |
+| **VAE (Improved)** | 1 / 6 | 0.020 | 0.157 | 0.75 | 4.52 |
+| **GARCH (Baseline)** | 1.3 / 6 | 0.042 | 3.56 | 1.00 | 2.97 |
 
-*DDPM results: 3-seed average (42, 123, 456), 400 epochs, from `run_ddpm_ablation.py`. Other models: single-run from `cross_model_analysis.py` (see `results/cross_model/`). Multi-seed re-runs for all models are in progress.*
+*All results: 3-seed average (42, 123, 456). DDPM and NormFlow: 400 epochs. See `experiments/results/final_comparison/comparison_table.csv` for full numbers.*
 
-- DDPM (v-pred + Student-t) achieves the best MMD, Wasserstein-1, and correlation distance across all models.
-- NormFlow has the best discriminative score (0.54), meaning its synthetic data is hardest for a classifier to distinguish from real data.
-- All models except TimeGAN and GARCH fail the no-raw-autocorrelation test (SF6).
-- Full cross-model analysis with bootstrap confidence intervals and per-regime breakdowns: `results/cross_model/cross_model_report.txt`.
+- DDPM (v-pred + Student-t) achieves the best MMD and correlation distance across all models.
+- NormFlow has the best discriminative score (0.73), matching DDPM on stylized facts coverage.
+- SF6 (No Raw Autocorrelation) is not passed by any model — see Evaluation Notes below.
+- Full per-model ANALYSIS files: `experiments/results/{model}_rebaseline/ANALYSIS.md`.
+
+### Evaluation Notes
+
+- **Unified framework**: all models run through the same `stylized_facts.run_all_tests()` function with identical thresholds, stride=1, 60-day windows, 3 seeds.
+- **Global normalization** (z-scoring using full-sample mean/std) is intentional for a generative benchmark — the goal is distributional fidelity over the full sample, not out-of-sample forecasting.
+- **SF=5/6 is the empirical ceiling**: running the same evaluation on the actual training data (S&P 16 assets, 2000-2024) yields only 3/6 — real data fails SF1 (Hill α=7.83 > threshold 5), SF4 (Hurst=1.01, non-stationary), and SF6 (LB statistic=5927). Our synthetic data at 5/6 is *more* stylized-fact-compliant than the source data.
+- **SF6 (Ljung-Box)** requires all 20 lag-wise p-values > 0.05 simultaneously. Under iid white noise, the probability of this is ≈ 0.95²⁰ ≈ 36% — meaning even a correct model fails ~64% of the time by chance. Treat SF6 as a qualitative improvement direction, not a binary pass/fail gate.
 
 ## Results Figures
 
@@ -148,22 +154,26 @@ Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index)
 
 ## DDPM Ablation Results
 
-Training on 16 assets, 60-day overlapping windows with stride=1 (5,293 windows), 400 epochs, 3 seeds (42, 123, 456). Evaluated with the updated stylized facts framework.
+Training on 16 assets, 60-day overlapping windows with stride=1 (~5,300 windows), 400 epochs, 3 seeds (42, 123, 456). Evaluated with the unified stylized facts framework.
 
-| Model | Params | Stylized Facts | MMD | Wasserstein-1 | Discriminative Score |
-|-------|-------:|:--------------:|:---:|:-------------:|:--------------------:|
-| **DDPM (v-pred + Student-t)** | 9.0M | **5.0 / 6** | **0.006** | **0.111** | **0.85** |
-| **DDPM (v-prediction)** | 9.0M | **5.0 / 6** | 0.037 | 0.148 | 0.93 |
+| Config | Stylized Facts | MMD | Disc. Score |
+|--------|:--------------:|:---:|:-----------:|
+| **DDPM Phase 6 (v-pred + Student-t)** | **5.0 / 6** | **0.006** | 0.85 |
+| DDPM + Min-SNR + warmup (Phase 7, Yuxia) | 5.0 / 6 | 0.031 | 0.92 |
+| DDPM + Min-SNR + decorr_reg (Phase 7, Yixuan) | 5.0 / 6 | 0.015 | 0.87 |
+| DDPM + patch stride=2 (Phase 7, Yizheng) | 4.0 / 6 | 0.021 | 0.72 |
+
+See `experiments/results/final_comparison/ddpm_ablation_table.csv` for full numbers.
 
 The key algorithmic innovations are **v-prediction** (Salimans & Ho, 2022) and a **Student-t forward process**. V-prediction replaces the standard noise-prediction target with a velocity target, improving stylized facts from 1.7/6 to 5.0/6. Adding Student-t noise (df=5) preserves heavy tails through the diffusion process, reducing MMD by 6x over v-prediction alone (0.006 vs 0.037) with no additional parameters.
 
-**Key discovery**: The sigmoid noise schedule was found to *suppress* volatility clustering and fat tails when combined with v-prediction (dropping SF from 5.0 to 2.7). This interaction effect was identified through controlled Phase 3 experiments. The cosine schedule is the correct pairing for v-prediction.
+**Key discovery (Phase 3)**: The sigmoid noise schedule *suppresses* volatility clustering and fat tails when combined with v-prediction (dropping SF from 5.0 to 2.7). The cosine schedule is the correct pairing for v-prediction.
 
-Full experiment results across 6 phases of ablation are in `experiments/results/`. Phase 6 results (current eval framework + stride=1 data) are in `experiments/results/phase6_rebaseline/`.
+Full experiment results across 7 phases of ablation are in `experiments/results/`. Phase 6 results are in `experiments/results/phase6_rebaseline/ANALYSIS.md`. Phase 7 decorr_reg analysis (including the evaluation framework calibration finding) is in `experiments/results/phase7_decorr_reg/ANALYSIS.md`.
 
 ### DDPM Ablation Study
 
-Multiple DDPM variants were tested across 6 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison, `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test, and `experiments/results/phase6_rebaseline/ANALYSIS.md` for the current results under the unified evaluation framework.
+Multiple DDPM variants were tested across 7 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison, `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test, and `experiments/results/phase6_rebaseline/ANALYSIS.md` for current results under the unified evaluation framework.
 
 <p align="center">
   <img src="experiments/results/fig_radar_chart.png" width="700" alt="Radar chart of normalized metrics across DDPM variants">

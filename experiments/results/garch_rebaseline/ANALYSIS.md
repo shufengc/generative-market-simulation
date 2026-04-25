@@ -56,6 +56,6 @@ GARCH serves as our **baseline model** -- it establishes a lower bound on perfor
 - TimeGAN (2.7/6 SF): GAN-based; better but discriminator collapses
 - NormFlow (5.0/6 SF): Strong but complex and slower  
 - VAE improved (TBD/6 SF): Variational autoencoder approach
-- **DDPM vpred+Student-t (5/6 SF, Disc=0.54)**: Best model -- strong SF coverage AND realistic discriminative score
+- **DDPM vpred+Student-t (5/6 SF, Disc=0.85)**: Best model -- strong SF coverage AND realistic discriminative score
 
 The GARCH baseline makes the DDPM improvement look compelling because GARCH fails 4-5 of the 6 tests while DDPM passes 5/6.
