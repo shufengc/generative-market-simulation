@@ -284,7 +284,7 @@ def main():
     parser.add_argument(
         "--fred-key",
         default=DEFAULT_FRED_KEY,
-        help="FRED API key (default: src.data.download.DEFAULT_FRED_KEY)",
+        help="FRED API key (default: FRED_API_KEY env var; skips FRED if not set)",
     )
     parser.add_argument("--seed", type=int, default=None,
                         help="Override default seed (SEED from config) for reproducibility.")

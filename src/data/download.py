@@ -49,8 +49,9 @@ FRED_SERIES = {
 }
 
 # Shared default when CLI / run_pipeline do not pass --fred-key.
-# Prefer FRED_API_KEY in the environment; do not commit real keys to public repos.
-DEFAULT_FRED_KEY = "a768db74187e1a65c2e080c6c5d025c1"
+# Set FRED_API_KEY environment variable or pass --fred-key on the CLI.
+# Get a free key at https://fred.stlouisfed.org/docs/api/api_key.html
+DEFAULT_FRED_KEY = os.environ.get("FRED_API_KEY")
 
 
 def download_market_data(
