@@ -286,6 +286,10 @@ def main():
         default=DEFAULT_FRED_KEY,
         help="FRED API key (default: src.data.download.DEFAULT_FRED_KEY)",
     )
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Override default seed (SEED from config) for reproducibility.")
+    parser.add_argument("--skip-train", action="store_true",
+                        help="Skip training step (data-prep only)")
     args = parser.parse_args()
 
     if args.quick:
@@ -299,7 +303,9 @@ def main():
 
     device = DEFAULT_DEVICE
     print(f"Device: {device}")
-    set_seed()
+    seed = args.seed if args.seed is not None else SEED
+    set_seed(seed)
+    print(f"Seed: {seed}")
 
     # Step 1: Download
     if not args.skip_download:
@@ -310,6 +316,10 @@ def main():
 
     # Step 3: Regime labels
     step_regime_labels(dataset, args.data_dir)
+
+    if args.skip_train:
+        print("\n[--skip-train] Skipping training/eval/dashboard. Data prep done.")
+        return
 
     # Step 4: Train
     trained_models, training_losses = step_train(
