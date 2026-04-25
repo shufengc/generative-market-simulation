@@ -1,0 +1,91 @@
+{
+  "experiment": "Phase 7 — Decorrelation Regularizer",
+  "date": "2026-04-24",
+  "branch": "phase7-decorr-reg",
+  "data": {
+    "stride": 1,
+    "windows": 5301,
+    "window_size": 60,
+    "n_features": 16,
+    "total_returns_points": 318060
+  },
+  "config": {
+    "model": "DDPM",
+    "flags": [
+      "use_vpred",
+      "use_student_t_noise",
+      "Min-SNR-gamma (from main)",
+      "warmup + cosine LR (from main)",
+      "use_decorr_reg"
+    ],
+    "decorr_weight": 0.05,
+    "decorr_max_lag": 3,
+    "decorr_t_frac": 0.5,
+    "student_t_df": 5.0,
+    "epochs": 400,
+    "batch_size": 64,
+    "lr": 2e-4,
+    "base_channels": 128,
+    "channel_mults": [1, 2, 4],
+    "T": 1000,
+    "platform": "Colab L4 GPU"
+  },
+  "results": {
+    "seeds": [42, 123, 456],
+    "per_seed": {
+      "42":  {"sf_passed": 5, "hill_alpha": 2.99, "garch_gamma": 0.905, "gjr_gamma": 0.271, "hurst": 0.65, "lambda1": 7.67, "maa": 0.0226, "ljung_box_stat_max": 1797.73, "ljung_box_p_min": 0.0, "mmd": 0.0116, "disc": 0.86, "train_time_s": 980.2},
+      "123": {"sf_passed": 5, "hill_alpha": 3.53, "garch_gamma": 0.919, "gjr_gamma": 0.35,  "hurst": 0.67, "lambda1": 8.26, "maa": 0.0209, "ljung_box_stat_max": 1634.67, "ljung_box_p_min": 0.0, "mmd": 0.0117, "disc": 0.87, "train_time_s": 951.0},
+      "456": {"sf_passed": 5, "hill_alpha": 3.45, "garch_gamma": 0.904, "gjr_gamma": 0.387, "hurst": 0.63, "lambda1": 7.94, "maa": 0.0164, "ljung_box_stat_max": 1090.41, "ljung_box_p_min": 0.0, "mmd": 0.0223, "disc": 0.89, "train_time_s": 954.6}
+    },
+    "mean": {
+      "sf_passed": 5.0,
+      "hill_alpha": 3.32,
+      "garch_gamma": 0.909,
+      "hurst": 0.65,
+      "lambda1": 7.96,
+      "maa": 0.0200,
+      "ljung_box_stat_max": 1507.6,
+      "mmd": 0.0152,
+      "disc": 0.873
+    },
+    "std": {
+      "hill_alpha": 0.30,
+      "maa": 0.0031,
+      "ljung_box_stat_max": 364.4,
+      "mmd": 0.0062,
+      "disc": 0.015
+    }
+  },
+  "failing_test": {
+    "sf6_name": "No Raw Autocorrelation",
+    "failure_criterion": "ljung_box_p_min > 0.05 AND maa < 0.05",
+    "maa": "PASS (0.020 mean < 0.05)",
+    "ljung_box_p": "FAIL (0.00 across all seeds)",
+    "note": "Real benchmark data also fails SF6 with LB_stat=5927 (vs our 1507)."
+  },
+  "real_data_baseline": {
+    "note": "Running run_all_tests on raw training returns (n=318060) — the data DDPM learns from",
+    "sf_passed": 3,
+    "hill_alpha": 7.83,
+    "hill_alpha_pass": false,
+    "garch_gamma": 1.0003,
+    "gjr_gamma": 0.0414,
+    "hurst": 1.0115,
+    "hurst_pass": false,
+    "lambda1": 7.82,
+    "maa": 0.0235,
+    "ljung_box_stat_max": 5926.96,
+    "sf6_pass": false
+  },
+  "comparison_table": {
+    "phase6_baseline": {"sf_passed": 5, "mmd": 0.006, "maa": 0.024, "disc": 0.85},
+    "phase7_decorr": {"sf_passed": 5, "mmd": 0.015, "maa": 0.020, "disc": 0.87},
+    "real_data":     {"sf_passed": 3, "mmd": null, "maa": 0.023, "ljung_box_stat": 5927}
+  },
+  "conclusion": [
+    "decorr_reg reduces MAA by 17% and LB_stat by 24-39% (signal-level success)",
+    "SF6 binary outcome unchanged — test is statistically unpassable at n=318k",
+    "Real data also fails SF6 (LB_stat 3x larger than our synthetic)",
+    "Final recommendation: retain decorr_reg in production config; report SF=5/6 as ceiling"
+  ]
+}

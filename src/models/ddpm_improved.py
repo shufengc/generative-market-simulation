@@ -26,6 +26,9 @@ can instantiate the baseline or any combination of improvements:
   - Linear warmup + cosine annealing LR schedule
   - Best model checkpoint restore
   - DDIM sampling with configurable eta (stochastic vs deterministic)
+
+  Phase 7:
+  12. use_decorr_reg     -- decorrelation regularizer on raw-return ACF (targets SF6)
 """
 
 from __future__ import annotations
@@ -429,6 +432,11 @@ class ImprovedDDPM(BaseGenerativeModel):
         use_wavelet: bool = False,
         use_student_t_noise: bool = False,
         student_t_df: float = 5.0,
+        # Phase 7 flags
+        use_decorr_reg: bool = False,
+        decorr_weight: float = 0.05,
+        decorr_max_lag: int = 3,
+        decorr_t_frac: float = 0.5,
         # DiT-specific
         dit_d_model: int = 256,
         dit_n_heads: int = 8,
@@ -458,6 +466,8 @@ class ImprovedDDPM(BaseGenerativeModel):
             parts.append("wavelet")
         if use_student_t_noise:
             parts.append("studentt")
+        if use_decorr_reg:
+            parts.append(f"decorr{decorr_weight:g}")
         if parts:
             tag += "-" + "+".join(parts)
 
@@ -482,6 +492,10 @@ class ImprovedDDPM(BaseGenerativeModel):
         self.use_wavelet = use_wavelet
         self.use_student_t_noise = use_student_t_noise
         self.student_t_df = student_t_df
+        self.use_decorr_reg = use_decorr_reg
+        self.decorr_weight = decorr_weight
+        self.decorr_max_lag = decorr_max_lag
+        self.decorr_t_frac = decorr_t_frac
         self._ref_acf = None
 
         if use_sigmoid_schedule:
@@ -688,6 +702,28 @@ class ImprovedDDPM(BaseGenerativeModel):
         return kurt.mean()
 
     @staticmethod
+    def _diff_acf_raw_sq(x: torch.Tensor, max_lag: int = 3) -> torch.Tensor:
+        """Sum of squared lag-k ACF on RAW returns (for SF6 decorrelation reg).
+
+        Operates per-sequence (across the time axis) and averages over the batch.
+        Uses raw returns (NOT absolute), targeting the 'no autocorrelation' fact
+        without affecting volatility-clustering (which lives in |r|).
+
+        Returns a scalar: mean over lags of E[rho_k^2].
+        """
+        B, C, L = x.shape
+        flat = x.reshape(B * C, L)
+        mu = flat.mean(dim=1, keepdim=True)
+        centered = flat - mu
+        var = (centered ** 2).mean(dim=1, keepdim=True).clamp(min=1e-8)
+        penalty = 0.0
+        for lag in range(1, max_lag + 1):
+            cov = (centered[:, lag:] * centered[:, :-lag]).mean(dim=1, keepdim=True)
+            rho = cov / var
+            penalty = penalty + (rho ** 2).mean()
+        return penalty / max_lag
+
+    @staticmethod
     def _diff_acf_abs(x: torch.Tensor, max_lag: int = 20) -> torch.Tensor:
         """Differentiable ACF of |returns| averaged across batch and features."""
         flat = x.reshape(x.shape[0], -1)
@@ -739,6 +775,19 @@ class ImprovedDDPM(BaseGenerativeModel):
             loss_acf = F.mse_loss(pred_acf, real_acf)
 
             loss = loss + self.aux_sf_weight * (loss_kurt + loss_acf)
+
+        # Phase 7: decorrelation regularizer on raw-return ACF (targets SF6).
+        # Only apply on low-t (low-noise) samples where x0_pred is reliable.
+        if self.use_decorr_reg and self.decorr_weight > 0:
+            t_threshold = int(self.T * self.decorr_t_frac)
+            mask = (t < t_threshold)
+            if mask.any():
+                x0_pred_all = self._predict_x0(x_noisy, t, pred).clamp(-5, 5)
+                x0_pred_low_t = x0_pred_all[mask]
+                decorr_loss = self._diff_acf_raw_sq(
+                    x0_pred_low_t, max_lag=self.decorr_max_lag,
+                )
+                loss = loss + self.decorr_weight * decorr_loss
 
         self._train_step_counter += 1
         return loss
@@ -1049,6 +1098,10 @@ class ImprovedDDPM(BaseGenerativeModel):
                 "use_acf_guidance": self.use_acf_guidance,
                 "use_wavelet": self.use_wavelet,
                 "use_student_t_noise": self.use_student_t_noise,
+                "use_decorr_reg": self.use_decorr_reg,
+                "decorr_weight": self.decorr_weight,
+                "decorr_max_lag": self.decorr_max_lag,
+                "decorr_t_frac": self.decorr_t_frac,
             },
         }
         if self.ema is not None:
