@@ -1,0 +1,54 @@
+{
+  "n_gen": 1000,
+  "gen_time_s": 4.433,
+  "n_pass": 4,
+  "sf_pass_vector": {
+    "sf1_pass": 0,
+    "sf2_pass": 1,
+    "sf3_pass": 1,
+    "sf4_pass": 1,
+    "sf5_pass": 1,
+    "sf6_pass": 0
+  },
+  "stylized_facts": {
+    "Fat Tails": {
+      "pass": false,
+      "hill_alpha_syn": 5.9277
+    },
+    "Volatility Clustering": {
+      "pass": true,
+      "garch_gamma_syn": 0.9681,
+      "arch_lm_p": 0.0
+    },
+    "Leverage Effect": {
+      "pass": true,
+      "method": "gjr_garch",
+      "gamma_syn": 0.0217
+    },
+    "Long Memory (Hurst)": {
+      "pass": true,
+      "hurst_syn": 0.6893
+    },
+    "Cross-Asset Correlations": {
+      "pass": true,
+      "lambda1_syn": 4.7959,
+      "rolling_corr_std_mean": 0.1402
+    },
+    "No Raw Autocorrelation": {
+      "pass": false,
+      "ljung_box_p_min": 0.0,
+      "ljung_box_stat_max": 1448.8023,
+      "maa_lags_1_20": 0.029105
+    }
+  },
+  "mmd": 0.043246,
+  "wasserstein_1d": 0.381822,
+  "discriminative_score": 0.7599,
+  "correlation_matrix_distance": 4.1437,
+  "ks_stat": 0.183,
+  "sig_w1": NaN,
+  "moment_mean_diff": NaN,
+  "moment_std_diff": NaN,
+  "moment_skew_diff": NaN,
+  "moment_kurt_diff": NaN
+}
