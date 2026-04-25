@@ -1,0 +1,34 @@
+{
+  "started_utc": "2026-04-25T03:04:29.184925+00:00",
+  "data_dir": "/home/lyz/ELEN4904/Project/data",
+  "out_dir": "/home/lyz/ELEN4904/Project/experiments/results/phase7_patch_training",
+  "checkpoint_dir": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training",
+  "patch_strides": [
+    1,
+    2,
+    3,
+    5,
+    10,
+    20
+  ],
+  "seeds": [
+    42,
+    123,
+    456
+  ],
+  "epochs": 400,
+  "batch_size": 64,
+  "lr": 0.0002,
+  "device": "cuda",
+  "n_gen": 1000,
+  "quick": false,
+  "skip_download": true,
+  "eval_only": true,
+  "skip_train_flag": false,
+  "skip_preprocess": true,
+  "windows_shape": [
+    5300,
+    60,
+    16
+  ]
+}
