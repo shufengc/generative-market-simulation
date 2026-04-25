@@ -134,6 +134,15 @@ def step_train(data_dir: str, models_to_train: list[str],
         elif model_name == "ddpm_improved":
             from src.models.ddpm_improved import ImprovedDDPM
             is_quick = epochs < 100
+            # Phase 7: optional decorrelation regularizer (targets SF6).
+            # Enable with env var: DDPM_DECORR_WEIGHT=0.05 (default 0 = off).
+            decorr_w = float(os.environ.get("DDPM_DECORR_WEIGHT", "0") or 0)
+            decorr_lag = int(os.environ.get("DDPM_DECORR_MAX_LAG", "3") or 3)
+            decorr_tfrac = float(os.environ.get("DDPM_DECORR_T_FRAC", "0.5") or 0.5)
+            use_decorr = decorr_w > 0
+            if use_decorr:
+                print(f"  [Phase7] decorr_reg ON: weight={decorr_w} "
+                      f"max_lag={decorr_lag} t_frac={decorr_tfrac}")
             model = ImprovedDDPM(
                 n_features=n_features, seq_len=seq_len,
                 cond_dim=cond_dim, device=device,
@@ -144,6 +153,11 @@ def step_train(data_dir: str, models_to_train: list[str],
                 use_vpred=True,
                 use_student_t_noise=True,
                 student_t_df=5.0,
+                # Phase 7 flags (pass through; no-op if decorr_w == 0)
+                use_decorr_reg=use_decorr,
+                decorr_weight=decorr_w,
+                decorr_max_lag=decorr_lag,
+                decorr_t_frac=decorr_tfrac,
             )
             history = model.train(windows, cond=cond, epochs=epochs, batch_size=batch_size, lr=lr)
             model.save(os.path.join(CHECKPOINTS_DIR, "ddpm_improved.pt"))
@@ -272,6 +286,10 @@ def main():
         default=DEFAULT_FRED_KEY,
         help="FRED API key (default: src.data.download.DEFAULT_FRED_KEY)",
     )
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Override default seed (SEED from config) for reproducibility.")
+    parser.add_argument("--skip-train", action="store_true",
+                        help="Skip training step (data-prep only)")
     args = parser.parse_args()
 
     if args.quick:
@@ -285,7 +303,9 @@ def main():
 
     device = DEFAULT_DEVICE
     print(f"Device: {device}")
-    set_seed()
+    seed = args.seed if args.seed is not None else SEED
+    set_seed(seed)
+    print(f"Seed: {seed}")
 
     # Step 1: Download
     if not args.skip_download:
@@ -296,6 +316,10 @@ def main():
 
     # Step 3: Regime labels
     step_regime_labels(dataset, args.data_dir)
+
+    if args.skip_train:
+        print("\n[--skip-train] Skipping training/eval/dashboard. Data prep done.")
+        return
 
     # Step 4: Train
     trained_models, training_losses = step_train(
