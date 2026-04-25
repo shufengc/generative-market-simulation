@@ -1,0 +1,1064 @@
+[
+  {
+    "patch_stride": 1,
+    "seed": 42,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_1/seed_42/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.448,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 6.3698
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9838,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.1488
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7017
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 7.7809,
+          "rolling_corr_std_mean": 0.2628
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 728.3271,
+          "maa_lags_1_20": 0.020227
+        }
+      },
+      "mmd": 0.024978,
+      "wasserstein_1d": 0.278758,
+      "discriminative_score": 0.7104,
+      "correlation_matrix_distance": 1.5264,
+      "ks_stat": 0.07,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 1,
+    "seed": 123,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_1/seed_123/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.308,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 7.4687
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9822,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.1817
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7193
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 7.8464,
+          "rolling_corr_std_mean": 0.2594
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 498.6103,
+          "maa_lags_1_20": 0.017707
+        }
+      },
+      "mmd": 0.015898,
+      "wasserstein_1d": 0.175471,
+      "discriminative_score": 0.7169,
+      "correlation_matrix_distance": 1.4014,
+      "ks_stat": 0.1066,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 1,
+    "seed": 456,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_1/seed_456/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.491,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 7.4254
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9779,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.1661
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7189
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 7.8559,
+          "rolling_corr_std_mean": 0.26
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1176.9848,
+          "maa_lags_1_20": 0.024633
+        }
+      },
+      "mmd": 0.029894,
+      "wasserstein_1d": 0.44302,
+      "discriminative_score": 0.7139,
+      "correlation_matrix_distance": 1.512,
+      "ks_stat": 0.111,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 2,
+    "seed": 42,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_2/seed_42/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.301,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 6.2572
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9742,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.1525
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7241
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 7.5008,
+          "rolling_corr_std_mean": 0.2494
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 646.4716,
+          "maa_lags_1_20": 0.019978
+        }
+      },
+      "mmd": 0.03266,
+      "wasserstein_1d": 0.245844,
+      "discriminative_score": 0.7194,
+      "correlation_matrix_distance": 1.844,
+      "ks_stat": 0.0732,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 2,
+    "seed": 123,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_2/seed_123/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.482,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 7.6796
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9757,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.1627
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7339
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 8.228,
+          "rolling_corr_std_mean": 0.2544
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1127.9987,
+          "maa_lags_1_20": 0.026287
+        }
+      },
+      "mmd": 0.011863,
+      "wasserstein_1d": 0.227697,
+      "discriminative_score": 0.7274,
+      "correlation_matrix_distance": 1.5246,
+      "ks_stat": 0.1078,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 2,
+    "seed": 456,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_2/seed_456/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.45,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 7.4243
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9714,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.122
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7444
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 7.5859,
+          "rolling_corr_std_mean": 0.2277
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1142.4337,
+          "maa_lags_1_20": 0.026075
+        }
+      },
+      "mmd": 0.019456,
+      "wasserstein_1d": 0.48913,
+      "discriminative_score": 0.7159,
+      "correlation_matrix_distance": 1.9187,
+      "ks_stat": 0.1316,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 3,
+    "seed": 42,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_3/seed_42/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.431,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 5.08
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9716,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0997
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7246
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 6.7817,
+          "rolling_corr_std_mean": 0.2075
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 538.6616,
+          "maa_lags_1_20": 0.017319
+        }
+      },
+      "mmd": 0.02733,
+      "wasserstein_1d": 0.218557,
+      "discriminative_score": 0.6764,
+      "correlation_matrix_distance": 2.5283,
+      "ks_stat": 0.0824,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 3,
+    "seed": 123,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_3/seed_123/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.393,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 6.1105
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9725,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0908
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7433
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 7.3795,
+          "rolling_corr_std_mean": 0.2014
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1321.481,
+          "maa_lags_1_20": 0.026427
+        }
+      },
+      "mmd": 0.00962,
+      "wasserstein_1d": 0.214386,
+      "discriminative_score": 0.7359,
+      "correlation_matrix_distance": 2.2328,
+      "ks_stat": 0.1052,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 3,
+    "seed": 456,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_3/seed_456/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.445,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 5.6551
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.973,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0794
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7405
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 6.8288,
+          "rolling_corr_std_mean": 0.1909
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1101.8376,
+          "maa_lags_1_20": 0.025892
+        }
+      },
+      "mmd": 0.031367,
+      "wasserstein_1d": 0.468618,
+      "discriminative_score": 0.7359,
+      "correlation_matrix_distance": 2.419,
+      "ks_stat": 0.1476,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 5,
+    "seed": 42,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_5/seed_42/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.462,
+      "n_pass": 5,
+      "sf_pass_vector": {
+        "sf1_pass": 1,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": true,
+          "hill_alpha_syn": 3.9051
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9583,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0646
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7083
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 4.6555,
+          "rolling_corr_std_mean": 0.1441
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 2284.0657,
+          "maa_lags_1_20": 0.03525
+        }
+      },
+      "mmd": 0.027632,
+      "wasserstein_1d": 0.187966,
+      "discriminative_score": 0.7389,
+      "correlation_matrix_distance": 4.27,
+      "ks_stat": 0.1142,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 5,
+    "seed": 123,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_5/seed_123/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.392,
+      "n_pass": 5,
+      "sf_pass_vector": {
+        "sf1_pass": 1,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": true,
+          "hill_alpha_syn": 4.6293
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9634,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.062
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.7098
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 5.904,
+          "rolling_corr_std_mean": 0.1534
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1012.2434,
+          "maa_lags_1_20": 0.021755
+        }
+      },
+      "mmd": 0.015012,
+      "wasserstein_1d": 0.245562,
+      "discriminative_score": 0.7559,
+      "correlation_matrix_distance": 3.3042,
+      "ks_stat": 0.111,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 5,
+    "seed": 456,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_5/seed_456/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.433,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 5.9277
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9681,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0217
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.6893
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 4.7959,
+          "rolling_corr_std_mean": 0.1402
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1448.8023,
+          "maa_lags_1_20": 0.029105
+        }
+      },
+      "mmd": 0.043246,
+      "wasserstein_1d": 0.381822,
+      "discriminative_score": 0.7599,
+      "correlation_matrix_distance": 4.1437,
+      "ks_stat": 0.183,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 10,
+    "seed": 42,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_10/seed_42/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.327,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 8.4609
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9608,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.021
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.5684
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 2.5146,
+          "rolling_corr_std_mean": 0.1318
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 406.8145,
+          "maa_lags_1_20": 0.016763
+        }
+      },
+      "mmd": 0.046483,
+      "wasserstein_1d": 0.289242,
+      "discriminative_score": 0.7599,
+      "correlation_matrix_distance": 6.439,
+      "ks_stat": 0.1416,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 10,
+    "seed": 123,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_10/seed_123/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.375,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 5.9869
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9572,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0506
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.6348
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 3.3566,
+          "rolling_corr_std_mean": 0.133
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1231.1394,
+          "maa_lags_1_20": 0.029546
+        }
+      },
+      "mmd": 0.038271,
+      "wasserstein_1d": 0.315328,
+      "discriminative_score": 0.7669,
+      "correlation_matrix_distance": 5.674,
+      "ks_stat": 0.1308,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 10,
+    "seed": 456,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_10/seed_456/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.365,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 9.8751
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.9593,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0154
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.5611
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 2.8348,
+          "rolling_corr_std_mean": 0.1314
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 1522.5361,
+          "maa_lags_1_20": 0.026169
+        }
+      },
+      "mmd": 0.054043,
+      "wasserstein_1d": 0.354261,
+      "discriminative_score": 0.6899,
+      "correlation_matrix_distance": 6.1087,
+      "ks_stat": 0.1656,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 20,
+    "seed": 42,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_20/seed_42/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.391,
+      "n_pass": 3,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 0,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 10.8882
+        },
+        "Volatility Clustering": {
+          "pass": false,
+          "garch_gamma_syn": 0.5,
+          "arch_lm_p": 0.547973
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0072
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.5235
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 1.7233,
+          "rolling_corr_std_mean": 0.1302
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 9e-06,
+          "ljung_box_stat_max": 57.9609,
+          "maa_lags_1_20": 0.005665
+        }
+      },
+      "mmd": 0.062463,
+      "wasserstein_1d": 0.35866,
+      "discriminative_score": 0.7594,
+      "correlation_matrix_distance": 7.3919,
+      "ks_stat": 0.1504,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 20,
+    "seed": 123,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_20/seed_123/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.402,
+      "n_pass": 4,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 1,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 8.8807
+        },
+        "Volatility Clustering": {
+          "pass": true,
+          "garch_gamma_syn": 0.956,
+          "arch_lm_p": 0.0
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0218
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.5734
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 2.1257,
+          "rolling_corr_std_mean": 0.1298
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 626.2364,
+          "maa_lags_1_20": 0.021957
+        }
+      },
+      "mmd": 0.05502,
+      "wasserstein_1d": 0.390424,
+      "discriminative_score": 0.7744,
+      "correlation_matrix_distance": 7.036,
+      "ks_stat": 0.1676,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  },
+  {
+    "patch_stride": 20,
+    "seed": 456,
+    "checkpoint": "/home/lyz/ELEN4904/Project/checkpoints/phase7_patch_training/patch_stride_20/seed_456/ddpm_improved.pt",
+    "eval": {
+      "n_gen": 1000,
+      "gen_time_s": 4.484,
+      "n_pass": 3,
+      "sf_pass_vector": {
+        "sf1_pass": 0,
+        "sf2_pass": 0,
+        "sf3_pass": 1,
+        "sf4_pass": 1,
+        "sf5_pass": 1,
+        "sf6_pass": 0
+      },
+      "stylized_facts": {
+        "Fat Tails": {
+          "pass": false,
+          "hill_alpha_syn": 10.5136
+        },
+        "Volatility Clustering": {
+          "pass": false,
+          "garch_gamma_syn": 0.5,
+          "arch_lm_p": 0.139206
+        },
+        "Leverage Effect": {
+          "pass": true,
+          "method": "gjr_garch",
+          "gamma_syn": 0.0113
+        },
+        "Long Memory (Hurst)": {
+          "pass": true,
+          "hurst_syn": 0.5112
+        },
+        "Cross-Asset Correlations": {
+          "pass": true,
+          "lambda1_syn": 1.8328,
+          "rolling_corr_std_mean": 0.1308
+        },
+        "No Raw Autocorrelation": {
+          "pass": false,
+          "ljung_box_p_min": 0.0,
+          "ljung_box_stat_max": 736.5191,
+          "maa_lags_1_20": 0.017217
+        }
+      },
+      "mmd": 0.064443,
+      "wasserstein_1d": 0.404891,
+      "discriminative_score": 0.7254,
+      "correlation_matrix_distance": 7.2503,
+      "ks_stat": 0.1702,
+      "sig_w1": NaN,
+      "moment_mean_diff": NaN,
+      "moment_std_diff": NaN,
+      "moment_skew_diff": NaN,
+      "moment_kurt_diff": NaN
+    }
+  }
+]
