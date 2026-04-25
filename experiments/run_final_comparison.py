@@ -2,11 +2,18 @@
 Final Cross-Model Comparison Pipeline.
 
 Loads results from all model rebaseline experiments and generates:
-  1. Unified comparison table (CSV)
-  2. Bar chart: SF passed per model
-  3. Bar chart: MMD per model
-  4. Radar chart: normalized metrics per model
-  5. SF pass/fail heatmap per model
+
+  Section 1 -- Cross-Model Comparison (baseline story):
+    1. Unified comparison table (CSV)
+    2. Bar chart: SF passed per model
+    3. Bar chart: MMD per model
+    4. Radar chart: normalized metrics per model
+    5. SF pass/fail heatmap per model
+
+  Section 2 -- DDPM Ablation / Phase 7 Improvements (DDPM story):
+    6. Ablation bar chart: SF per DDPM config
+    7. Ablation bar chart: MMD per DDPM config
+    8. Ablation table (CSV + markdown)
 
 Usage:
     PYTHONPATH=. python experiments/run_final_comparison.py
@@ -215,7 +222,188 @@ def load_vae() -> dict | None:
     }
 
 
+def load_ddpm_yuxia_enhanced() -> dict | None:
+    """Load Yuxia's DDPM enhanced rebaseline (Min-SNR + warmup + best-model restore).
+
+    Uses the p5_vpred_studentt config which mirrors our Phase 6 config + enhancements.
+    """
+    path = os.path.join(EXPERIMENTS_DIR, "results", "ddpm_enhanced_rebaseline", "ablation_results.json")
+    if not os.path.exists(path):
+        print("Yuxia enhanced rebaseline results not yet available -- skipping.")
+        return None
+
+    with open(path) as f:
+        data = json.load(f)
+
+    # p5_vpred_studentt = vpred + Student-t + Min-SNR + warmup LR + best-model restore
+    entries = [e for e in data if e.get("model") == "p5_vpred_studentt"]
+    if not entries:
+        entries = data
+
+    sf_vals = [e.get("n_pass", 0) for e in entries]
+    mmd_vals = [e.get("mmd", float("nan")) for e in entries]
+    disc_vals = [e.get("discriminative_score", float("nan")) for e in entries]
+    w1_vals = [e.get("wasserstein_1d", float("nan")) for e in entries]
+    corr_vals = [e.get("correlation_matrix_distance", float("nan")) for e in entries]
+
+    sf_breakdown = _extract_sf_breakdown_dict(entries[0].get("stylized_facts", {}))
+
+    return {
+        "name": "DDPM\n+Min-SNR+warmup\n(Yuxia)",
+        "short_name": "DDPM+MinSNR",
+        "sf_mean": float(np.mean(sf_vals)),
+        "sf_std": float(np.std(sf_vals)),
+        "mmd_mean": float(np.nanmean(mmd_vals)),
+        "mmd_std": float(np.nanstd(mmd_vals)),
+        "disc_mean": float(np.nanmean(disc_vals)),
+        "disc_std": float(np.nanstd(disc_vals)),
+        "w1_mean": float(np.nanmean(w1_vals)),
+        "w1_std": float(np.nanstd(w1_vals)),
+        "corr_mean": float(np.nanmean(corr_vals)),
+        "corr_std": float(np.nanstd(corr_vals)),
+        "n_seeds": len(entries),
+        "sf_breakdown": sf_breakdown,
+        "color": "#42A5F5",  # lighter blue (variant of DDPM)
+    }
+
+
+def load_ddpm_phase7_decorr() -> dict | None:
+    """Load Yixuan's Phase 7 decorrelation regularizer results."""
+    path = os.path.join(EXPERIMENTS_DIR, "results", "phase7_decorr_reg", "phase7_results.json")
+    if not os.path.exists(path):
+        print("Phase 7 decorr_reg results not yet available -- skipping.")
+        return None
+
+    with open(path) as f:
+        d = json.load(f)
+
+    results = d.get("results", {})
+    per_seed = results.get("per_seed", {})
+    if not per_seed:
+        print("phase7_results.json has no per_seed data -- skipping.")
+        return None
+
+    entries = list(per_seed.values())
+    sf_vals = [e.get("sf_passed", 0) for e in entries]
+    mmd_vals = [e.get("mmd", float("nan")) for e in entries]
+    disc_vals = [e.get("disc", float("nan")) for e in entries]
+
+    # SF breakdown: derive from mean values (all seeds pass the same 5 SFs)
+    # From ANALYSIS.md: SF1-SF5 pass, SF6 fails
+    sf_breakdown = {
+        "Fat Tails": True,
+        "Vol Clustering": True,
+        "Leverage Effect": True,
+        "Long Memory": True,
+        "Cross-Asset Corr": True,
+        "No Raw Autocorr": False,
+    }
+
+    return {
+        "name": "DDPM\n+MinSNR+decorr_reg\n(Yixuan Ph7)",
+        "short_name": "DDPM+decorr",
+        "sf_mean": float(np.mean(sf_vals)),
+        "sf_std": float(np.std(sf_vals)),
+        "mmd_mean": float(np.nanmean(mmd_vals)),
+        "mmd_std": float(np.nanstd(mmd_vals)),
+        "disc_mean": float(np.nanmean(disc_vals)),
+        "disc_std": float(np.nanstd(disc_vals)),
+        "w1_mean": float("nan"),
+        "w1_std": float("nan"),
+        "corr_mean": float("nan"),
+        "corr_std": float("nan"),
+        "n_seeds": len(entries),
+        "sf_breakdown": sf_breakdown,
+        "color": "#1565C0",  # dark blue (another DDPM variant)
+    }
+
+
+def load_ddpm_patch_stride2() -> dict | None:
+    """Load Yizheng's patch-based training results at stride=2 (best MMD config)."""
+    path = os.path.join(EXPERIMENTS_DIR, "results", "phase7_patch_training", "summary_by_patch_stride.csv")
+    if not os.path.exists(path):
+        print("Patch training summary not found -- skipping.")
+        return None
+
+    import csv as _csv
+    with open(path) as f:
+        rows = list(_csv.DictReader(f))
+
+    row_s2 = next((r for r in rows if int(r["patch_stride"]) == 2), None)
+    if not row_s2:
+        return None
+
+    # SF breakdown: stride=2 consistently fails SF1 and SF6 (from ANALYSIS.md / WeChat)
+    sf_breakdown = {
+        "Fat Tails": False,
+        "Vol Clustering": True,
+        "Leverage Effect": True,
+        "Long Memory": True,
+        "Cross-Asset Corr": True,
+        "No Raw Autocorr": False,
+    }
+
+    return {
+        "name": "DDPM\n+patch stride=2\n(Yizheng)",
+        "short_name": "DDPM+patch",
+        "sf_mean": float(row_s2["sf_passed_mean"]),
+        "sf_std": 0.0,
+        "mmd_mean": float(row_s2["mmd_mean"]),
+        "mmd_std": 0.0,
+        "disc_mean": float(row_s2["disc_mean"]),
+        "disc_std": 0.0,
+        "w1_mean": float(row_s2.get("w1_mean", "nan") or "nan"),
+        "w1_std": float("nan"),
+        "corr_mean": float(row_s2.get("corr_dist_mean", "nan") or "nan"),
+        "corr_std": float("nan"),
+        "n_seeds": 3,
+        "sf_breakdown": sf_breakdown,
+        "color": "#0D47A1",  # deepest blue
+    }
+
+
 def _extract_sf_breakdown(sf_list: list) -> dict:
+    """Extract per-SF pass/fail from a list of {name, pass, ...} dicts."""
+    name_map = {
+        "Fat Tails": "Fat Tails",
+        "Volatility Clustering": "Vol Clustering",
+        "Leverage Effect": "Leverage Effect",
+        "Long Memory": "Long Memory",
+        "Long Memory (Hurst)": "Long Memory",
+        "Cross-Asset Correlations": "Cross-Asset Corr",
+        "No Raw Autocorrelation": "No Raw Autocorr",
+    }
+    result = {}
+    for sf in sf_list:
+        if isinstance(sf, dict):
+            name = sf.get("name", "")
+            mapped = name_map.get(name, name)
+            result[mapped] = bool(sf.get("pass", False))
+    return result
+
+
+def _extract_sf_breakdown_dict(sf_dict: dict) -> dict:
+    """Extract per-SF pass/fail from a dict of sf_name -> {pass: bool, ...}."""
+    name_map = {
+        "Fat Tails": "Fat Tails",
+        "Volatility Clustering": "Vol Clustering",
+        "Leverage Effect": "Leverage Effect",
+        "Long Memory": "Long Memory",
+        "Long Memory (Hurst)": "Long Memory",
+        "Cross-Asset Correlations": "Cross-Asset Corr",
+        "No Raw Autocorrelation": "No Raw Autocorr",
+    }
+    result = {}
+    for name, vals in sf_dict.items():
+        mapped = name_map.get(name, name)
+        if isinstance(vals, dict):
+            result[mapped] = bool(vals.get("pass", False))
+        elif isinstance(vals, bool):
+            result[mapped] = vals
+    return result
+
+
+
     """Extract per-SF pass/fail from stylized_facts list."""
     name_map = {
         "Fat Tails": "Fat Tails",
@@ -359,7 +547,7 @@ def plot_disc_bar(models: list[dict], output_dir: str):
     print(f"Saved {path}")
 
 
-def plot_sf_heatmap(models: list[dict], output_dir: str):
+def plot_sf_heatmap(models: list[dict], output_dir: str, filename: str = "fig_sf_heatmap.png"):
     """Heatmap: per-SF pass/fail for each model."""
     models_with_breakdown = [m for m in models if m.get("sf_breakdown")]
     if not models_with_breakdown:
@@ -391,7 +579,7 @@ def plot_sf_heatmap(models: list[dict], output_dir: str):
             ax.text(j, i, label, ha="center", va="center", fontsize=14, color=color)
 
     fig.tight_layout()
-    path = os.path.join(output_dir, "fig_sf_heatmap.png")
+    path = os.path.join(output_dir, filename)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {path}")
@@ -489,6 +677,109 @@ def save_comparison_table(models: list[dict], output_dir: str):
 
 
 # ---------------------------------------------------------------------------
+# DDPM Ablation plots
+# ---------------------------------------------------------------------------
+
+def plot_ddpm_ablation_sf(ddpm_models: list[dict], output_dir: str):
+    """Bar chart: SF per DDPM config (ablation story)."""
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x = np.arange(len(ddpm_models))
+    width = 0.5
+    bars = ax.bar(
+        x,
+        [m["sf_mean"] for m in ddpm_models],
+        width,
+        yerr=[m["sf_std"] for m in ddpm_models],
+        color=[m["color"] for m in ddpm_models],
+        capsize=5, edgecolor="white", linewidth=0.8,
+        error_kw={"elinewidth": 1.5, "ecolor": "#444"},
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels([m["short_name"] for m in ddpm_models], fontsize=10)
+    ax.set_ylabel("Stylized Facts Passed (out of 6)", fontsize=11)
+    ax.set_title("DDPM Phase 7 Ablation — SF Coverage\n(SF=5/6 is the ceiling: real data also fails SF6)", fontsize=12, fontweight="bold")
+    ax.set_ylim(0, 7)
+    ax.axhline(5, color="orange", linestyle="--", linewidth=1.2, alpha=0.7, label="Ceiling (5/6 = real data limit)")
+    ax.axhline(6, color="green", linestyle="--", linewidth=1.0, alpha=0.4, label="Theoretical max (6/6)")
+    ax.legend(fontsize=9)
+    ax.grid(axis="y", alpha=0.3)
+    for bar, m in zip(bars, ddpm_models):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.08,
+                f"{m['sf_mean']:.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+    fig.tight_layout()
+    path = os.path.join(output_dir, "fig_ddpm_ablation_sf.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
+def plot_ddpm_ablation_mmd(ddpm_models: list[dict], output_dir: str):
+    """Bar chart: MMD per DDPM config (log scale)."""
+    valid = [m for m in ddpm_models if not np.isnan(m["mmd_mean"])]
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x = np.arange(len(valid))
+    width = 0.5
+    bars = ax.bar(
+        x,
+        [m["mmd_mean"] for m in valid],
+        width,
+        yerr=[m["mmd_std"] for m in valid],
+        color=[m["color"] for m in valid],
+        capsize=5, edgecolor="white", linewidth=0.8,
+        error_kw={"elinewidth": 1.5, "ecolor": "#444"},
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels([m["short_name"] for m in valid], fontsize=10)
+    ax.set_ylabel("MMD (lower = better)", fontsize=11)
+    ax.set_title("DDPM Phase 7 Ablation — Sample Quality (MMD)", fontsize=12, fontweight="bold")
+    ax.set_yscale("log")
+    ax.grid(axis="y", alpha=0.3)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter("%.4f"))
+    for bar, m in zip(bars, valid):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.3,
+                f"{m['mmd_mean']:.4f}", ha="center", va="bottom", fontsize=9)
+    fig.tight_layout()
+    path = os.path.join(output_dir, "fig_ddpm_ablation_mmd.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
+def save_ddpm_ablation_table(ddpm_models: list[dict], output_dir: str):
+    """Save DDPM ablation CSV and markdown table."""
+    fieldnames = ["Config", "N_Seeds", "SF_Mean", "SF_Std", "MMD_Mean", "MMD_Std", "Disc_Mean", "Disc_Std"]
+    rows = []
+    for m in ddpm_models:
+        rows.append({
+            "Config": m["short_name"],
+            "N_Seeds": m["n_seeds"],
+            "SF_Mean": round(m["sf_mean"], 2),
+            "SF_Std": round(m["sf_std"], 2),
+            "MMD_Mean": round(m["mmd_mean"], 4),
+            "MMD_Std": round(m["mmd_std"], 4),
+            "Disc_Mean": round(m["disc_mean"], 4),
+            "Disc_Std": round(m["disc_std"], 4),
+        })
+
+    path_csv = os.path.join(output_dir, "ddpm_ablation_table.csv")
+    with open(path_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Saved {path_csv}")
+
+    print("\n## DDPM Phase 7 Ablation Table\n")
+    print("| Config | SF | MMD | Disc |")
+    print("|--------|:--:|:---:|:----:|")
+    for r in rows:
+        sf = f"{r['SF_Mean']} ± {r['SF_Std']}"
+        mmd = f"{r['MMD_Mean']} ± {r['MMD_Std']}"
+        disc = f"{r['Disc_Mean']} ± {r['Disc_Std']}"
+        print(f"| {r['Config']} | {sf} | {mmd} | {disc} |")
+    print("\n> Note: SF=5/6 is the ceiling — real S&P data only passes 3/6 SFs (Yixuan's calibration discovery).")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -499,6 +790,12 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # -------------------------------------------------------------------------
+    # Section 1: Cross-model comparison (baseline story)
+    # -------------------------------------------------------------------------
+    print("=" * 60)
+    print("SECTION 1: Cross-Model Comparison (Baseline Story)")
+    print("=" * 60)
     print("Loading model results...")
     models_raw = [
         load_garch(),
@@ -519,6 +816,30 @@ def main():
     plot_disc_bar(models, args.output_dir)
     plot_sf_heatmap(models, args.output_dir)
     plot_radar(models, args.output_dir)
+
+    # -------------------------------------------------------------------------
+    # Section 2: DDPM ablation (Phase 7 improvement story)
+    # -------------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("SECTION 2: DDPM Phase 7 Ablation")
+    print("=" * 60)
+    print("Loading DDPM variant results...")
+    ddpm_raw = [
+        load_ddpm_phase6(),           # our Phase 6 baseline (best MMD)
+        load_ddpm_yuxia_enhanced(),   # Yuxia: +Min-SNR + warmup
+        load_ddpm_phase7_decorr(),    # Yixuan: +decorr_reg
+        load_ddpm_patch_stride2(),    # Yizheng: patch stride=2 (best MMD among patch configs)
+    ]
+    ddpm_models = [m for m in ddpm_raw if m is not None]
+    print(f"Loaded {len(ddpm_models)} DDPM configs: {[m['short_name'] for m in ddpm_models]}")
+
+    print("\nGenerating DDPM ablation table...")
+    save_ddpm_ablation_table(ddpm_models, args.output_dir)
+
+    print("\nGenerating DDPM ablation plots...")
+    plot_ddpm_ablation_sf(ddpm_models, args.output_dir)
+    plot_ddpm_ablation_mmd(ddpm_models, args.output_dir)
+    plot_sf_heatmap(ddpm_models, args.output_dir, filename="fig_ddpm_sf_heatmap.png")
 
     print(f"\nAll outputs saved to: {args.output_dir}/")
     print("Files:")
