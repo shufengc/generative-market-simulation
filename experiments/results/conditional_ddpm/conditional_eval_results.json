@@ -1,0 +1,101 @@
+{
+  "crisis": {
+    "n_generated": 1000,
+    "n_real_windows": 724,
+    "sf_count": 4,
+    "vol_mean_across_assets": 1.1967,
+    "vol_max_asset": 1.5444,
+    "mmd": 0.001637,
+    "wasserstein_1d": 0.129778,
+    "ks_stat": 0.0668,
+    "ks_pvalue": 0.0,
+    "moments": {
+      "real": {
+        "mean": -0.031860265880823135,
+        "std": 1.6962295770645142,
+        "skew": -0.21000511944293976,
+        "kurtosis": 5.049539566040039
+      },
+      "synthetic": {
+        "mean": -0.015994688495993614,
+        "std": 1.2178676128387451,
+        "skew": -0.13782621920108795,
+        "kurtosis": 1.6960716247558594
+      },
+      "abs_diff": {
+        "mean": 0.015866,
+        "std": 0.478362,
+        "skew": 0.072179,
+        "kurtosis": 3.353468
+      }
+    },
+    "discriminative_score": 0.7293,
+    "correlation_matrix_distance": 2.7435
+  },
+  "calm": {
+    "n_generated": 1000,
+    "n_real_windows": 2112,
+    "sf_count": 3,
+    "vol_mean_across_assets": 0.3048,
+    "vol_max_asset": 0.4217,
+    "mmd": 0.005626,
+    "wasserstein_1d": 0.07737,
+    "ks_stat": 0.1244,
+    "ks_pvalue": 0.0,
+    "moments": {
+      "real": {
+        "mean": 0.008634568192064762,
+        "std": 0.6557368636131287,
+        "skew": -0.49719902873039246,
+        "kurtosis": 5.490817070007324
+      },
+      "synthetic": {
+        "mean": 0.027978772297501564,
+        "std": 0.5407522320747375,
+        "skew": -0.4519617557525635,
+        "kurtosis": -0.12822365760803223
+      },
+      "abs_diff": {
+        "mean": 0.019344,
+        "std": 0.114985,
+        "skew": 0.045237,
+        "kurtosis": 5.619041
+      }
+    },
+    "discriminative_score": 1.0,
+    "correlation_matrix_distance": 5.8573
+  },
+  "normal": {
+    "n_generated": 1000,
+    "n_real_windows": 2457,
+    "sf_count": 5,
+    "vol_mean_across_assets": 0.6664,
+    "vol_max_asset": 0.8913,
+    "mmd": 0.007787,
+    "wasserstein_1d": 0.138147,
+    "ks_stat": 0.096,
+    "ks_pvalue": 0.0,
+    "moments": {
+      "real": {
+        "mean": 0.0030643295031040907,
+        "std": 0.9525977969169617,
+        "skew": -0.19135458767414093,
+        "kurtosis": 4.182893753051758
+      },
+      "synthetic": {
+        "mean": 0.03138323128223419,
+        "std": 0.6754562854766846,
+        "skew": 0.0481124110519886,
+        "kurtosis": 4.180465221405029
+      },
+      "abs_diff": {
+        "mean": 0.028319,
+        "std": 0.277142,
+        "skew": 0.239467,
+        "kurtosis": 0.002429
+      }
+    },
+    "discriminative_score": 0.6724,
+    "correlation_matrix_distance": 1.9641
+  }
+}
