@@ -65,6 +65,19 @@ Yahoo Finance + FRED API
         └──────────────────────┘
 ```
 
+## Four-Layer Framework for Useful Synthetic Financial Data
+
+This project frames "useful" synthetic data as four progressively harder layers:
+
+| Layer | Name | Criterion | Status |
+|-------|------|-----------|--------|
+| **L1** | Diversity | Thousands of novel multi-asset paths | **Delivered** |
+| **L2** | Statistical Fidelity | SF=5/6, MMD=0.006 — best across all 5 models | **Delivered** |
+| **L3** | Conditional Control | Regime-specific generation (crisis / calm / normal) | **Implemented** — conditioning works, calibration ongoing |
+| **L4** | Downstream Utility | VaR/CVaR coverage, strategy backtest fidelity | **Measured** — Kupiec FAIL; root cause identified (vol compression) |
+
+A methodological contribution emerged from the calibration study: running the same SF evaluation on real data yields only 3/6, establishing 5/6 as the empirical ceiling. See [Evaluation Notes](#evaluation-notes) and `docs/l3-l4-experiment-report.md` for the full L3/L4 experiment writeup.
+
 ## Model Overview and Cross-Model Comparison
 
 ### Model Overview
@@ -241,20 +254,52 @@ PYTHONPATH=. python3 -m src.demo.app
 # Open http://localhost:8000
 ```
 
-### Conditional Generation
+### Conditional Generation (L3)
 
-The DDPM supports regime-conditioned generation (crisis, calm, normal) via classifier-free guidance:
+The DDPM supports regime-conditioned generation (crisis, calm, normal) via classifier-free guidance. A trained conditional checkpoint is at `checkpoints/ddpm_conditional.pt`.
 
 ```python
 from src.models.ddpm_improved import ImprovedDDPM
 from src.data.regime_labels import get_regime_conditioning_vectors
 
-model = ImprovedDDPM(n_features=16, seq_len=60, cond_dim=5, device="mps",
-                     use_vpred=True)
-model.load("checkpoints/ddpm.pt")
+model = ImprovedDDPM(
+    n_features=16, seq_len=60, cond_dim=5,
+    base_channels=128, channel_mults=(1, 2, 4),
+    use_vpred=True, use_student_t_noise=True,
+    device="cuda",
+)
+model.load("checkpoints/ddpm_conditional.pt")
 
-crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["crisis"])
+regime_vecs = get_regime_conditioning_vectors()
+crisis_paths = model.generate(1000, use_ddim=True, ddim_steps=50,
+                               guidance_scale=2.0, cond=regime_vecs["crisis"])
 ```
+
+To run the full L3/L4 experiment:
+
+```bash
+# Train conditional DDPM (~11 min on RTX 5090)
+python3 experiments/run_conditional_ddpm.py --skip-eval
+
+# Evaluate regime-stratified generation
+python3 experiments/run_conditional_ddpm.py --skip-train
+python3 experiments/evaluate_regimes.py
+
+# L4 VaR/CVaR backtest
+python3 experiments/var_backtest.py --n-paths 5000
+```
+
+**L3 key results** (400 epochs, RTX 5090, 8.99M params):
+
+| Regime | n_real | SF | MMD | Disc | Syn Vol | Real Vol |
+|--------|--------|:--:|:---:|:----:|--------:|--------:|
+| Crisis | 724 | 4/6 | 0.018 | 0.729 | 1.199 | 1.684 |
+| Calm | 2,112 | 3/6 | 0.274 | 1.000 | 0.305 | 0.644 |
+| Normal | 2,457 | 5/6 | 0.018 | 0.672 | 0.666 | 0.947 |
+
+Conditioning sanity checks both pass: crisis vol (1.20) > normal vol (0.67) > calm vol (0.30). The calm regime is the hardest — Disc=1.0 indicates the discriminator can perfectly distinguish real from synthetic calm-period data.
+
+**L4 key result**: Kupiec coverage test fails at both 95% and 99% (real 95%-VaR is 5.59; synthetic estimates 1.86, a 67% under-estimate). Root cause: the diffusion model systematically compresses volatility by 30–53%. PnL rank-correlation is 0.973, so relative ordering is preserved — only the absolute scale is miscalibrated. See `docs/l3-l4-experiment-report.md` for full analysis and remediation roadmap.
 
 ## Project Structure
 
@@ -283,9 +328,18 @@ crisis_paths = model.generate(1000, cond=get_regime_conditioning_vectors()["cris
 │   │   └── config.py            # Central configuration
 │   └── run_pipeline.py          # End-to-end orchestration
 ├── experiments/
-│   ├── run_ddpm_ablation.py     # Ablation study: multi-phase, 20+ variants x 3 seeds
-│   ├── report_ddpm.py           # 3-level evaluation report generator
-│   └── results/                 # Figures, tables, raw JSON results
+│   ├── run_ddpm_ablation.py          # Ablation study: multi-phase, 20+ variants x 3 seeds
+│   ├── report_ddpm.py                # 3-level evaluation report generator
+│   ├── run_conditional_ddpm.py       # L3: conditional DDPM training + regime generation
+│   ├── evaluate_regimes.py           # L3: regime-stratified evaluation with SF/MMD/Disc
+│   ├── var_backtest.py               # L4: VaR/CVaR Kupiec test + Sharpe distribution
+│   └── results/                      # Figures, tables, raw JSON results
+│       ├── conditional_ddpm/         # L3 regime-stratified results + plots
+│       └── var_backtest/             # L4 VaR backtest results + plots
+├── docs/
+│   ├── l3-l4-experiment-report.md   # Full L3/L4 experiment writeup with roadmap
+│   ├── gamma-prompts-final.md        # Gamma presentation slide prompts
+│   └── branch-status-report.md      # Branch audit and divergence report
 ├── notebooks/
 │   └── demo.ipynb               # Jupyter demo notebook
 └── requirements.txt
