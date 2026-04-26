@@ -1,0 +1,74 @@
+[
+  {
+    "regime": "crisis",
+    "n_real": 724,
+    "n_synthetic": 1000,
+    "n_evaluated": 724,
+    "sf_count": 4,
+    "sf_details": {
+      "Fat Tails": false,
+      "Volatility Clustering": true,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.017864,
+    "discriminative_score": 0.7293,
+    "correlation_distance": 2.7435,
+    "syn_vol_mean": 1.1987,
+    "real_vol_mean": 1.6835,
+    "syn_excess_kurtosis": 1.696,
+    "real_excess_kurtosis": 5.05,
+    "syn_skewness": -0.1378,
+    "real_skewness": -0.21
+  },
+  {
+    "regime": "calm",
+    "n_real": 2112,
+    "n_synthetic": 1000,
+    "n_evaluated": 1000,
+    "sf_count": 3,
+    "sf_details": {
+      "Fat Tails": false,
+      "Volatility Clustering": false,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.273543,
+    "discriminative_score": 1.0,
+    "correlation_distance": 5.8573,
+    "syn_vol_mean": 0.3048,
+    "real_vol_mean": 0.6435,
+    "syn_excess_kurtosis": -0.128,
+    "real_excess_kurtosis": 5.491,
+    "syn_skewness": -0.452,
+    "real_skewness": -0.4972
+  },
+  {
+    "regime": "normal",
+    "n_real": 2457,
+    "n_synthetic": 1000,
+    "n_evaluated": 1000,
+    "sf_count": 5,
+    "sf_details": {
+      "Fat Tails": true,
+      "Volatility Clustering": true,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.018371,
+    "discriminative_score": 0.6724,
+    "correlation_distance": 1.9641,
+    "syn_vol_mean": 0.6664,
+    "real_vol_mean": 0.9474,
+    "syn_excess_kurtosis": 4.18,
+    "real_excess_kurtosis": 4.183,
+    "syn_skewness": 0.0481,
+    "real_skewness": -0.1914
+  }
+]

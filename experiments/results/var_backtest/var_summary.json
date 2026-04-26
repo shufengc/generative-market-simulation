@@ -1,0 +1,48 @@
+{
+  "n_real": 5293,
+  "n_synthetic": 5000,
+  "checkpoint": "ddpm_conditional.pt",
+  "device": "cuda",
+  "var_cvar": {
+    "95%": {
+      "VaR_real": 5.5902,
+      "VaR_synthetic": 1.85682,
+      "CVaR_real": 9.68394,
+      "CVaR_synthetic": 3.77397,
+      "VaR_relative_error_pct": 66.78
+    },
+    "99%": {
+      "VaR_real": 12.93549,
+      "VaR_synthetic": 4.78857,
+      "CVaR_real": 15.9164,
+      "CVaR_synthetic": 7.32991,
+      "VaR_relative_error_pct": 62.98
+    }
+  },
+  "hit_rates": {
+    "95%": {
+      "hit_rate": 0.219,
+      "nominal": 0.050000000000000044,
+      "kupiec_pass": false
+    },
+    "99%": {
+      "hit_rate": 0.0671,
+      "nominal": 0.010000000000000009,
+      "kupiec_pass": false
+    }
+  },
+  "sharpe": {
+    "real_mean": 0.315,
+    "real_std": 1.681,
+    "syn_mean": 1.728,
+    "syn_std": 1.735,
+    "mean_abs_diff": 1.413
+  },
+  "momentum_strategy": {
+    "real_mean_pnl": -0.1696,
+    "syn_mean_pnl": 0.1198,
+    "real_sharpe": -0.934,
+    "syn_sharpe": 1.069,
+    "pnl_rank_corr": 0.973
+  }
+}
