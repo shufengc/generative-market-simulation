@@ -240,7 +240,8 @@ def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe,
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+    _results_dir = results_dir or _DEFAULT_RESULTS_DIR
+    os.makedirs(_results_dir, exist_ok=True)
 
     # Figure 1: VaR/CVaR bar chart
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -270,7 +271,7 @@ def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe,
 
     fig.suptitle("L4 Downstream Validation: VaR/CVaR Backtest", fontweight="bold")
     fig.tight_layout()
-    out = os.path.join(RESULTS_DIR, "var_comparison.png")
+    out = os.path.join(_results_dir, "var_comparison.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")
@@ -307,7 +308,7 @@ def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe,
 
     fig.suptitle("L4 Downstream Validation: PnL and Sharpe", fontweight="bold")
     fig.tight_layout()
-    out = os.path.join(results_dir or _DEFAULT_RESULTS_DIR, "pnl_sharpe_distribution.png")
+    out = os.path.join(_results_dir, "pnl_sharpe_distribution.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")

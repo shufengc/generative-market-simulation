@@ -696,3 +696,115 @@ python3 experiments/var_backtest.py \
 | Exp D oversample | `checkpoints/ddpm_conditional_expD_oversample.pt` | Normal SF + crisis Disc |
 | Exp E combined | `checkpoints/ddpm_conditional_expE_combined.pt` | Best crisis Disc (0.642) |
 
+---
+
+## Sprint Execution Results (Apr 26, 2026 — Same Day)
+
+This section documents the outcomes of executing the 1-Day Sprint Plan above. All steps were run on the same RTX 5090 session.
+
+---
+
+### Priority 1 — Quantile Moment Matching
+
+**Method:** Extended `experiments/run_rescaling_ablation.py` with `--mode {std,quantile,cornish-fisher}`. Ran `--mode quantile` using the v1 baseline checkpoint on 5090 with 5,000 unconditional paths.
+
+**Per-regime results (before and after quantile mapping):**
+
+| Regime | Vol (raw) | Vol (mapped) | Vol (real) | Kurt (raw) | Kurt (mapped) | Kurt (real) | Disc (raw) | Disc (mapped) |
+|--------|----------|-------------|-----------|-----------|--------------|-----------|-----------|--------------|
+| Crisis | 1.192 | **1.679** | 1.684 | 1.63 | **5.01** | 5.05 | 0.746 | **0.577** |
+| Calm   | 0.305 | 0.701 | 0.644 | −0.13 | 8.85 | 5.49 | 1.000 | 1.000 |
+| Normal | 0.664 | **0.938** | 0.947 | 4.07 | **4.27** | 4.18 | 0.685 | **0.509** |
+
+**VaR results after quantile mapping:**
+
+| Confidence | VaR (real) | VaR (raw) | Err | VaR (mapped) | Err | Kupiec |
+|-----------|-----------|----------|-----|-------------|-----|--------|
+| 95% | 5.590 | 1.807 | 67.7% | 4.513 | **19.3%** | FAIL (hit=0.075) |
+| 99% | 12.936 | 4.683 | 63.8% | 8.471 | **34.5%** | **PASS** (hit=0.026) |
+
+**Key findings:**
+- Crisis kurtosis recovers perfectly: 1.63 → 5.01 (real: 5.05). The shape of the crisis distribution is now correct.
+- Normal Disc drops to 0.509 — essentially indistinguishable from real (random = 0.5).
+- **99% Kupiec passes for the first time.** VaR error drops from 64% to 34.5%.
+- 95% Kupiec still fails (hit=0.075 vs nominal=0.05). Calm regime kurtosis over-corrects to 8.85 (quantile mapping amplifies tails due to sample size mismatch between 1,000 synthetic and 2,112 real calm windows).
+- Cornish-Fisher expansion was also tested but produced numerically unstable kurtosis values (102–555); not suitable for production use.
+
+**Conclusion:** Quantile mapping achieves the highest-ever L4 score: 99% Kupiec passes. The 95% failure is rooted in the calm regime's over-corrected kurtosis.
+
+---
+
+### Priority 2 — Regime Checkpoint Routing
+
+**Method:** Created `experiments/run_regime_router.py`. Loaded the best checkpoint per regime (expC for crisis, expB for calm, expD for normal), generated 1,000 regime-conditioned samples each, evaluated per-regime and combined.
+
+| Regime | Checkpoint | SF | Disc | MMD | Vol (syn) | Vol (real) | Kurt (syn) | Kurt (real) |
+|--------|-----------|:--:|:----:|:---:|----------:|----------:|----------:|----------:|
+| Crisis | expC_decorr | **5/6** | 0.894 | 0.102 | 0.676 | 1.684 | 5.66 | 5.05 |
+| Calm | expB_aux_sf | 3/6 | 0.959 | 0.089 | 0.286 | 0.644 | 0.24 | 5.49 |
+| Normal | expD_oversample | **5/6** | 0.786 | 0.040 | 0.560 | 0.947 | 4.97 | 4.18 |
+| **Combined** | (all three) | **5/6** | 0.719 | 0.067 | — | — | — | — |
+
+**Key findings:**
+- Crisis achieves **5/6 SF for the first time** via the decorr checkpoint. However, vol is suppressed (0.68 vs 1.68) because decorr_reg penalizes volatility amplitude.
+- Normal SF=5/6 maintained with the oversample checkpoint.
+- Calm remains stuck at 3/6; no checkpoint solves the calm kurtosis problem structurally.
+- Combined SF=5/6 — the best combined score achieved in this project.
+
+---
+
+### Priority 3 — Presentation Figures
+
+Three figures generated to `presentation_assets/`:
+
+| File | Description |
+|------|-------------|
+| `v2_ablation_comparison.png` | Grouped SF and Disc bars: v1 + Exp A–E + Quantile Matched + Regime Router |
+| `v2_moment_matching.png` | Before/after vol and kurtosis for all regimes with quantile mapping |
+| `v2_guidance_sweep.png` | Crisis Disc and Vol vs guidance scale 1.0–7.0 (Exp B checkpoint) |
+
+---
+
+### Priority 4 — Calm Fine-tune (Implemented, Not Run)
+
+Added `--finetune-regime`, `--finetune-lr`, `--finetune-epochs` flags to `experiments/run_conditional_ddpm.py`. The `_run_finetune()` function filters training data to the specified regime's windows and fine-tunes from the current checkpoint state. Not run due to uncertain ROI given Priority 1 success at 99%.
+
+---
+
+### README Architecture Diagram
+
+Replaced the ASCII-art project pipeline in `README.md` with a generated PNG (`presentation_assets/pipeline_overview.png`) produced by the new `scripts/generate_pipeline_diagram.py` script.
+
+---
+
+### Updated L3/L4 Verdict (Post-Sprint)
+
+| Dimension | v1 | v2 ablation | Post-sprint (quantile) | Status |
+|-----------|-----|------------|----------------------|--------|
+| Crisis SF | 4/6 | 5/6 (Exp C) | 4/6 | same |
+| Crisis Disc | 0.729 | 0.642 (Exp E) | **0.577** | best ever |
+| Crisis kurtosis accuracy | 1.70 vs 5.05 | 1.70 vs 5.05 | **5.01 vs 5.05** | solved |
+| Normal Disc | 0.672 | 0.700 | **0.509** | near-random |
+| VaR error (95%) | 66.8% | 45.9% (std rescaling) | **19.3%** | substantially improved |
+| VaR error (99%) | 63.0% | 40.7% (std rescaling) | **34.5%** | improved |
+| Kupiec 99% | FAIL | FAIL | **PASS** | first pass |
+| Kupiec 95% | FAIL | FAIL | FAIL | open |
+| Calm kurtosis | 0 vs 5.5 | 0 vs 5.5 | 8.85 vs 5.49 | over-corrects |
+
+**Final project verdict:** L3 delivers controlled regime differentiation (5/6 SF for crisis via Exp C, 5/6 SF combined via regime router). L4 achieves 99% Kupiec pass via quantile moment matching — the first Kupiec success in the project.
+
+---
+
+### New Files Created in This Session
+
+| File | Description |
+|------|-------------|
+| `experiments/run_regime_router.py` | Best-of-breed checkpoint routing for all three regimes |
+| `scripts/generate_v2_figures.py` | Three v2 presentation figures from JSON results |
+| `scripts/generate_pipeline_diagram.py` | High-level project pipeline PNG for README |
+| `presentation_assets/pipeline_overview.png` | Generated project pipeline diagram |
+| `presentation_assets/v2_ablation_comparison.png` | v2 ablation sweep SF and Disc bar chart |
+| `presentation_assets/v2_moment_matching.png` | Quantile moment matching before/after distribution chart |
+| `presentation_assets/v2_guidance_sweep.png` | Guidance scale sweep line charts |
+
+

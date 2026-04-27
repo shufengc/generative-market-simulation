@@ -3,15 +3,17 @@ run_rescaling_ablation.py
 =========================
 Part 1 of the L3/L4 v2 iteration.
 
-Post-hoc variance rescaling: loads the existing conditional DDPM checkpoint,
-generates regime-conditioned samples, then rescales each asset's per-window
-standard deviation to match the real data's distribution.
+Post-hoc rescaling: loads the existing conditional DDPM checkpoint,
+generates regime-conditioned samples, then rescales to match the real
+marginal distribution using one of three modes.
 
-Key question: if the shape (tail ordering, correlations) is correct and only
-the scale is wrong, does rescaling fix VaR coverage and stylized facts?
+Modes:
+  std            -- match per-asset standard deviation only (original)
+  quantile       -- full quantile mapping per asset (matches kurtosis by construction)
+  cornish-fisher -- Cornish-Fisher moment matching (mean, std, skew, kurtosis)
 
 Outputs:
-  experiments/results/conditional_ddpm_v2/rescaling/
+  experiments/results/conditional_ddpm_v2/{rescaling|moment_matching}/
     regime_eval_rescaled.json     -- per-regime SF/MMD/Disc before & after
     var_summary_rescaled.json     -- L4 VaR Kupiec before & after rescaling
     rescaling_comparison.png      -- bar chart: vol / kurtosis real vs raw vs rescaled
@@ -20,6 +22,8 @@ Outputs:
 Usage:
     python3 experiments/run_rescaling_ablation.py
     python3 experiments/run_rescaling_ablation.py --n-paths 5000
+    python3 experiments/run_rescaling_ablation.py --mode quantile --n-paths 5000
+    python3 experiments/run_rescaling_ablation.py --mode cornish-fisher --n-paths 5000
 """
 
 from __future__ import annotations
@@ -47,7 +51,9 @@ from src.evaluation.stylized_facts import run_all_tests             # noqa: E402
 DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
 DATA_DIR     = os.path.join(ROOT, "data")
 CKPT_PATH    = os.path.join(ROOT, "checkpoints", "ddpm_conditional.pt")
-OUT_DIR      = os.path.join(ROOT, "experiments", "results", "conditional_ddpm_v2", "rescaling")
+OUT_DIR_STD  = os.path.join(ROOT, "experiments", "results", "conditional_ddpm_v2", "rescaling")
+OUT_DIR_QM   = os.path.join(ROOT, "experiments", "results", "conditional_ddpm_v2", "moment_matching")
+OUT_DIR_CF   = os.path.join(ROOT, "experiments", "results", "conditional_ddpm_v2", "moment_matching_cf")
 REGIMES      = ["crisis", "calm", "normal"]
 REGIME_INT   = {"crisis": 1, "calm": 2, "normal": 0}
 
@@ -71,6 +77,78 @@ def rescale_to_real(synthetic: np.ndarray, real: np.ndarray) -> np.ndarray:
     scale      = real_std / syn_std                  # (D,)
     syn        = syn * scale[None, None, :]          # broadcast over (N, T, D)
     return syn
+
+
+def quantile_map(synthetic: np.ndarray, real: np.ndarray) -> np.ndarray:
+    """
+    Per-asset quantile mapping: map each synthetic value to the corresponding
+    real quantile.  Exactly matches the full marginal distribution (including
+    skew and kurtosis) by construction.
+
+    Both arrays: (N, T, D).  Mapping is computed over the flattened (N*T) axis
+    and then reshaped back to (N, T, D).
+    """
+    N, T, D = synthetic.shape
+    syn = synthetic.copy()
+    for i in range(D):
+        syn_flat  = syn[:, :, i].flatten()               # (N*T,)
+        real_flat = real[:, :, i].flatten()              # (N*T,)
+        real_sorted = np.sort(real_flat)
+        # Compute the rank of each synthetic value (as a quantile)
+        ranks = np.argsort(np.argsort(syn_flat))         # stable rank
+        quantiles = ranks / (len(syn_flat) - 1)
+        # Map quantiles to real distribution via linear interpolation
+        mapped = np.interp(quantiles, np.linspace(0, 1, len(real_sorted)), real_sorted)
+        syn[:, :, i] = mapped.reshape(N, T)
+    return syn
+
+
+def cornish_fisher_match(synthetic: np.ndarray, real: np.ndarray) -> np.ndarray:
+    """
+    Cornish-Fisher moment matching: standardise synthetic, apply Cornish-Fisher
+    expansion to match real skewness and excess kurtosis, then rescale to real
+    mean and std. Operates per-asset over the flattened (N*T) axis.
+
+    CF expansion: z_cf = z + (s/6)*(z²-1) + (k/24)*(z³-3z) - (s²/36)*(2z³-5z)
+    where s = target skew, k = target excess kurtosis.
+    """
+    from scipy.stats import skew as sp_skew, kurtosis as sp_kurt  # noqa: PLC0415
+    N, T, D = synthetic.shape
+    syn = synthetic.copy()
+    for i in range(D):
+        syn_flat  = syn[:, :, i].flatten()
+        real_flat = real[:, :, i].flatten()
+        # Target moments from real data
+        r_mean = float(real_flat.mean())
+        r_std  = float(real_flat.std()) + 1e-8
+        r_skew = float(sp_skew(real_flat))
+        r_kurt = float(sp_kurt(real_flat, fisher=True))  # excess kurtosis
+        # Standardise synthetic
+        s_mean = float(syn_flat.mean())
+        s_std  = float(syn_flat.std()) + 1e-8
+        z = (syn_flat - s_mean) / s_std
+        # Cornish-Fisher expansion
+        s, k = r_skew, r_kurt
+        z_cf = (z
+                + (s / 6) * (z**2 - 1)
+                + (k / 24) * (z**3 - 3 * z)
+                - (s**2 / 36) * (2 * z**3 - 5 * z))
+        # Rescale to real mean/std
+        matched = z_cf * r_std + r_mean
+        syn[:, :, i] = matched.reshape(N, T)
+    return syn
+
+
+def apply_rescaling(synthetic: np.ndarray, real: np.ndarray, mode: str) -> np.ndarray:
+    """Dispatch to the selected rescaling mode."""
+    if mode == "std":
+        return rescale_to_real(synthetic, real)
+    elif mode == "quantile":
+        return quantile_map(synthetic, real)
+    elif mode == "cornish-fisher":
+        return cornish_fisher_match(synthetic, real)
+    else:
+        raise ValueError(f"Unknown rescaling mode: {mode}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -135,10 +213,18 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-paths", type=int, default=5000)
     parser.add_argument("--no-plot", action="store_true")
+    parser.add_argument(
+        "--mode",
+        choices=["std", "quantile", "cornish-fisher"],
+        default="std",
+        help="Rescaling mode: std (std-match only), quantile (full quantile map), "
+             "cornish-fisher (moment matching via CF expansion). Default: std",
+    )
     args = parser.parse_args()
 
+    OUT_DIR = OUT_DIR_STD if args.mode == "std" else (OUT_DIR_CF if args.mode == "cornish-fisher" else OUT_DIR_QM)
     os.makedirs(OUT_DIR, exist_ok=True)
-    print(f"Device: {DEVICE}")
+    print(f"Device: {DEVICE}  Mode: {args.mode}  Output: {OUT_DIR}")
     if DEVICE == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
@@ -175,8 +261,8 @@ def main() -> None:
         print(f"  Evaluating raw ...")
         before = eval_one(real_reg, syn_raw, regime_name)
 
-        syn_resc = rescale_to_real(syn_raw, real_reg)
-        print(f"  Evaluating rescaled ...")
+        syn_resc = apply_rescaling(syn_raw, real_reg, args.mode)
+        print(f"  Evaluating {args.mode}-rescaled ...")
         after  = eval_one(real_reg, syn_resc, regime_name)
 
         results[regime_name] = {"before": before, "after": after}
@@ -194,7 +280,7 @@ def main() -> None:
         n_samples=args.n_paths, use_ddim=True, ddim_steps=50,
         guidance_scale=1.0, ddim_eta=0.0, cond=None,
     )
-    syn_uncond_resc = rescale_to_real(syn_uncond_raw, windows)
+    syn_uncond_resc = apply_rescaling(syn_uncond_raw, windows, args.mode)
     real_pnl        = portfolio_returns(windows).sum(-1)
     pnl_raw         = portfolio_returns(syn_uncond_raw).sum(-1)
     pnl_resc        = portfolio_returns(syn_uncond_resc).sum(-1)
@@ -237,7 +323,7 @@ def main() -> None:
 
     # ── Summary table
     print("\n" + "=" * 80)
-    print("RESCALING SUMMARY")
+    print(f"RESCALING SUMMARY  (mode={args.mode})")
     print("=" * 80)
     print(f"{'Regime':<10} {'SF_raw':>7} {'SF_resc':>8} {'Disc_raw':>9} {'Disc_resc':>10}"
           f" {'Vol_raw':>8} {'Vol_resc':>9} {'Vol_real':>9}")
@@ -252,10 +338,10 @@ def main() -> None:
 
     # ── Plots
     if not args.no_plot:
-        _make_plots(results, var_summary, real_pnl, pnl_raw, pnl_resc)
+        _make_plots(results, var_summary, real_pnl, pnl_raw, pnl_resc, OUT_DIR, args.mode)
 
 
-def _make_plots(results, var_summary, real_pnl, pnl_raw, pnl_resc):
+def _make_plots(results, var_summary, real_pnl, pnl_raw, pnl_resc, out_dir, mode="std"):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -293,7 +379,7 @@ def _make_plots(results, var_summary, real_pnl, pnl_raw, pnl_resc):
 
     fig.suptitle("Post-Hoc Rescaling Effect on Distribution Shape", fontweight="bold")
     fig.tight_layout()
-    out = os.path.join(OUT_DIR, "rescaling_comparison.png")
+    out = os.path.join(out_dir, "rescaling_comparison.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")
@@ -321,13 +407,13 @@ def _make_plots(results, var_summary, real_pnl, pnl_raw, pnl_resc):
                 transform=ax.transAxes, ha="center", va="top",
                 fontsize=9, color=kupiec_col,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=kupiec_col))
-        ax.set_title(f"{key} — VaR/CVaR After Rescaling", fontweight="bold")
+        ax.set_title(f"{key} — VaR/CVaR After {mode} Rescaling", fontweight="bold")
         ax.set_ylabel("Loss (positive = loss)")
         ax.tick_params(axis="x", rotation=15)
         ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
-    fig.suptitle("L4: VaR Backtest — Raw vs Post-Hoc Rescaled", fontweight="bold")
+    fig.suptitle(f"L4: VaR Backtest — Raw vs Post-Hoc {mode} Rescaled", fontweight="bold")
     fig.tight_layout()
-    out = os.path.join(OUT_DIR, "var_comparison_rescaled.png")
+    out = os.path.join(out_dir, "var_comparison_rescaled.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")
