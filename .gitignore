@@ -40,3 +40,6 @@ build/
 /perplexity_search.md
 /proposal.zip
 /Project_video.mp4
+
+# Internal-use-only files (PDFs, personal notes)
+/internal/
