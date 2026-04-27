@@ -320,6 +320,54 @@ def make_regime_plots(windows: np.ndarray, window_regimes: np.ndarray) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
+# Fine-tuning
+# ─────────────────────────────────────────────────────────────
+
+def _run_finetune(model: ImprovedDDPM, windows: np.ndarray, window_cond: np.ndarray,
+                  window_regimes: np.ndarray, regime: str,
+                  lr: float = 5e-5, epochs: int = 100) -> None:
+    """
+    Fine-tune the already-loaded model on windows from a single regime.
+
+    Overwrites the checkpoint at _ckpt_name() after fine-tuning and updates the
+    output tag to include '_ft{regime}' so results go to a separate directory.
+    """
+    regime_int = {"crisis": 1, "calm": 2, "normal": 0}[regime]
+    # Use the original (unoversampled) real windows for fine-tune
+    real_w = np.load(os.path.join(CFG["data_dir"], "windows.npy"))
+    real_c = np.load(os.path.join(CFG["data_dir"], "window_cond.npy"))
+    real_r = np.load(os.path.join(CFG["data_dir"], "window_regimes.npy"))
+
+    mask = real_r == regime_int
+    ft_windows = real_w[mask]
+    ft_cond    = real_c[mask]
+    print(f"\n[Fine-tune] Regime={regime}  windows={ft_windows.shape[0]}"
+          f"  lr={lr}  epochs={epochs}")
+
+    if ft_windows.shape[0] < 32:
+        print(f"  [SKIP] Too few windows ({ft_windows.shape[0]}) for fine-tuning.")
+        return
+
+    # Update tag so the fine-tuned checkpoint and results go to a new directory
+    original_tag = CFG["tag"]
+    CFG["tag"] = f"{original_tag}_ft{regime}"
+
+    model.train(
+        ft_windows,
+        cond=ft_cond,
+        epochs=epochs,
+        batch_size=min(CFG["batch_size"], ft_windows.shape[0]),
+        lr=lr,
+        ema_decay=CFG["ema_decay"],
+    )
+
+    os.makedirs(CFG["checkpoint_dir"], exist_ok=True)
+    ckpt_path = os.path.join(CFG["checkpoint_dir"], _ckpt_name())
+    model.save(ckpt_path)
+    print(f"Fine-tuned checkpoint saved: {ckpt_path}")
+
+
+# ─────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────
 def main() -> None:
@@ -339,6 +387,15 @@ def main() -> None:
                         help="Enable decorrelation regularizer (targets SF6)")
     parser.add_argument("--crisis-oversample", type=int, default=1,
                         help="Oversample crisis windows N times in training (default: 1)")
+    # fine-tune flags
+    parser.add_argument("--finetune-regime", type=str, default=None,
+                        choices=["crisis", "calm", "normal"],
+                        help="If set, fine-tune on only this regime's windows "
+                             "(requires an existing checkpoint for --tag).")
+    parser.add_argument("--finetune-lr", type=float, default=5e-5,
+                        help="Learning rate for fine-tune phase (default: 5e-5)")
+    parser.add_argument("--finetune-epochs", type=int, default=100,
+                        help="Number of fine-tune epochs (default: 100)")
     args = parser.parse_args()
 
     # Apply CLI overrides to CFG
@@ -367,6 +424,13 @@ def main() -> None:
         model.load(ckpt_path)
     else:
         model = train(windows, window_cond)
+
+    # Optional fine-tune on a single regime
+    if args.finetune_regime is not None:
+        _run_finetune(model, windows, window_cond, window_regimes,
+                      regime=args.finetune_regime,
+                      lr=args.finetune_lr,
+                      epochs=args.finetune_epochs)
 
     if not args.skip_eval:
         evaluate_conditional(model, windows, window_regimes)

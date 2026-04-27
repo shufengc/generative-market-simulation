@@ -1,0 +1,82 @@
+{
+  "crisis": {
+    "regime": "crisis",
+    "n": 724,
+    "sf_count": 5,
+    "sf_details": {
+      "Fat Tails": true,
+      "Volatility Clustering": true,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.10216,
+    "discriminative_score": 0.8936,
+    "correlation_distance": 2.4308,
+    "syn_vol": 0.6763,
+    "real_vol": 1.6835,
+    "syn_kurtosis": 5.664,
+    "real_kurtosis": 5.05
+  },
+  "calm": {
+    "regime": "calm",
+    "n": 1000,
+    "sf_count": 3,
+    "sf_details": {
+      "Fat Tails": false,
+      "Volatility Clustering": false,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.088673,
+    "discriminative_score": 0.959,
+    "correlation_distance": 5.1776,
+    "syn_vol": 0.2857,
+    "real_vol": 0.6435,
+    "syn_kurtosis": 0.242,
+    "real_kurtosis": 5.491
+  },
+  "normal": {
+    "regime": "normal",
+    "n": 1000,
+    "sf_count": 5,
+    "sf_details": {
+      "Fat Tails": true,
+      "Volatility Clustering": true,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.039495,
+    "discriminative_score": 0.7859,
+    "correlation_distance": 2.0169,
+    "syn_vol": 0.5602,
+    "real_vol": 0.9474,
+    "syn_kurtosis": 4.966,
+    "real_kurtosis": 4.183
+  },
+  "combined": {
+    "regime": "combined",
+    "n": 1000,
+    "sf_count": 5,
+    "sf_details": {
+      "Fat Tails": true,
+      "Volatility Clustering": true,
+      "Leverage Effect": true,
+      "Long Memory (Hurst)": true,
+      "Cross-Asset Correlations": true,
+      "No Raw Autocorrelation": false
+    },
+    "mmd": 0.067491,
+    "discriminative_score": 0.7189,
+    "correlation_distance": 2.5862,
+    "syn_vol": 0.6752,
+    "real_vol": 1.4712,
+    "syn_kurtosis": 5.791,
+    "real_kurtosis": 7.088
+  }
+}

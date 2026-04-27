@@ -37,33 +37,9 @@ Every generated dataset is validated against six well-documented empirical regul
 
 ## Architecture
 
-```
-Yahoo Finance + FRED API
-        |
-   download.py ──> preprocess.py ──> regime_labels.py
-        |                |                  |
-     prices.csv      windows.npy      window_cond.npy
-                         |                  |
-                   ┌─────┴──────────────────┘
-                   v
-        ┌──────────────────────┐
-        │   5 Generative Models │
-        │  DDPM | GAN | VAE    │
-        │  GARCH | NormFlow    │
-        └──────────┬───────────┘
-                   v
-        ┌──────────────────────┐
-        │     Evaluation        │
-        │  6 Stylized Facts     │
-        │  MMD / Wasserstein    │
-        │  Discriminative Score │
-        └──────────┬───────────┘
-                   v
-        ┌──────────────────────┐
-        │    Interactive Demo   │
-        │  FastAPI + Chart.js   │
-        └──────────────────────┘
-```
+<p align="center">
+  <img src="presentation_assets/pipeline_overview.png" width="800" alt="Project pipeline overview">
+</p>
 
 ## Four-Layer Framework for Useful Synthetic Financial Data
 
