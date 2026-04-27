@@ -26,7 +26,7 @@ import torch
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-RESULTS_DIR    = os.path.join(ROOT, "experiments", "results", "var_backtest")
+_DEFAULT_RESULTS_DIR = os.path.join(ROOT, "experiments", "results", "var_backtest")
 DATA_DIR       = os.path.join(ROOT, "data")
 CHECKPOINT_DIR = os.path.join(ROOT, "checkpoints")
 DEVICE         = "cuda" if torch.cuda.is_available() else "cpu"
@@ -83,21 +83,25 @@ def momentum_strategy_pnl(windows: np.ndarray, lookback: int = 20) -> np.ndarray
 # Generate synthetic samples
 # ─────────────────────────────────────────────────────────────
 
-def load_or_generate(n_paths: int) -> np.ndarray:
+def load_or_generate(n_paths: int, ckpt_override: str = None) -> np.ndarray:
     """Load cached samples or generate from DDPM checkpoint."""
     from src.models.ddpm_improved import ImprovedDDPM  # noqa: PLC0415
 
-    # Prefer the conditional checkpoint; fall back to ddpm_improved.pt or ddpm.pt
-    ckpt_candidates = [
-        os.path.join(CHECKPOINT_DIR, "ddpm_conditional.pt"),
-        os.path.join(CHECKPOINT_DIR, "ddpm_improved.pt"),
-    ]
-    ckpt_path = next((p for p in ckpt_candidates if os.path.exists(p)), None)
-    if ckpt_path is None:
-        raise FileNotFoundError(
-            "No DDPM checkpoint found in checkpoints/. "
-            "Run run_conditional_ddpm.py first."
-        )
+    if ckpt_override:
+        ckpt_path = ckpt_override
+        if not os.path.exists(ckpt_path):
+            raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+    else:
+        ckpt_candidates = [
+            os.path.join(CHECKPOINT_DIR, "ddpm_conditional.pt"),
+            os.path.join(CHECKPOINT_DIR, "ddpm_improved.pt"),
+        ]
+        ckpt_path = next((p for p in ckpt_candidates if os.path.exists(p)), None)
+        if ckpt_path is None:
+            raise FileNotFoundError(
+                "No DDPM checkpoint found in checkpoints/. "
+                "Run run_conditional_ddpm.py first."
+            )
     print(f"  Loading checkpoint: {ckpt_path}")
 
     # Read n_features from data
@@ -230,7 +234,8 @@ def print_summary(results: dict) -> None:
         print("  VaR may be over- or under-estimated for those confidence levels.")
 
 
-def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe) -> None:
+def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe,
+               results_dir: str = None) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -302,7 +307,7 @@ def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe) -> Non
 
     fig.suptitle("L4 Downstream Validation: PnL and Sharpe", fontweight="bold")
     fig.tight_layout()
-    out = os.path.join(RESULTS_DIR, "pnl_sharpe_distribution.png")
+    out = os.path.join(results_dir or _DEFAULT_RESULTS_DIR, "pnl_sharpe_distribution.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")
@@ -316,8 +321,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="L4 VaR/CVaR backtest")
     parser.add_argument("--n-paths", type=int, default=5000)
     parser.add_argument("--no-plot",   action="store_true")
+    parser.add_argument("--results-dir", type=str, default=None,
+                        help="Output directory for results (default: experiments/results/var_backtest)")
+    parser.add_argument("--ckpt", type=str, default=None,
+                        help="Path to DDPM checkpoint (overrides default search)")
     args = parser.parse_args()
 
+    RESULTS_DIR = args.results_dir or _DEFAULT_RESULTS_DIR
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     print(f"Device: {DEVICE}")
@@ -331,7 +341,7 @@ def main() -> None:
 
     # Generate synthetic
     print("\nGenerating synthetic samples ...")
-    synthetic = load_or_generate(args.n_paths)
+    synthetic = load_or_generate(args.n_paths, ckpt_override=args.ckpt)
     print(f"  Synthetic: {synthetic.shape}")
 
     results, real_pnl, syn_pnl, real_sharpe, syn_sharpe = run_backtest(
@@ -346,7 +356,8 @@ def main() -> None:
     print(f"\nSaved: {out_json}")
 
     if not args.no_plot:
-        make_plots(results, real_pnl, syn_pnl, real_sharpe, syn_sharpe)
+        make_plots(results, real_pnl, syn_pnl, real_sharpe, syn_sharpe,
+                   results_dir=RESULTS_DIR)
 
 
 if __name__ == "__main__":

@@ -29,8 +29,8 @@ from src.evaluation.metrics import (                            # noqa: E402
 )
 from src.evaluation.stylized_facts import run_all_tests         # noqa: E402
 
-RESULTS_DIR = os.path.join(ROOT, "experiments", "results", "conditional_ddpm")
-DATA_DIR    = os.path.join(ROOT, "data")
+_DEFAULT_RESULTS_DIR = os.path.join(ROOT, "experiments", "results", "conditional_ddpm")
+DATA_DIR             = os.path.join(ROOT, "data")
 
 REGIMES    = ["crisis", "calm", "normal"]
 REGIME_INT = {"crisis": 1, "calm": 2, "normal": 0}
@@ -180,8 +180,12 @@ def make_comparison_plot(all_results: list[dict], windows: np.ndarray,
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-plot", action="store_true")
+    parser.add_argument("--results-dir", type=str, default=None,
+                        help="Directory containing synthetic_*.npy files "
+                             "(default: experiments/results/conditional_ddpm)")
     args = parser.parse_args()
 
+    RESULTS_DIR = args.results_dir or _DEFAULT_RESULTS_DIR
     os.makedirs(RESULTS_DIR, exist_ok=True)
     windows, window_regimes = load_real_windows()
     all_results = []
