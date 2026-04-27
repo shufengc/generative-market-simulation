@@ -795,6 +795,7 @@ class ImprovedDDPM(BaseGenerativeModel):
     def train(self, data: np.ndarray, cond: np.ndarray | None = None,
               epochs: int = 200, batch_size: int = 64, lr: float = 2e-4,
               ema_decay: float = 0.9999, warmup_epochs: int = 10,
+              sample_weights: np.ndarray | None = None,
               **kwargs) -> dict:
         self.net.train()
 
@@ -834,6 +835,13 @@ class ImprovedDDPM(BaseGenerativeModel):
 
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             drop_last=True)
+        if sample_weights is not None:
+            from torch.utils.data import WeightedRandomSampler  # noqa: PLC0415
+            w_tensor = torch.tensor(sample_weights, dtype=torch.float32)
+            sampler  = WeightedRandomSampler(w_tensor, num_samples=len(w_tensor),
+                                             replacement=True)
+            loader   = DataLoader(dataset, batch_size=batch_size, sampler=sampler,
+                                  drop_last=True)
         optimizer = torch.optim.AdamW(self.net.parameters(), lr=lr, weight_decay=1e-5)
 
         # Linear warmup then cosine decay
