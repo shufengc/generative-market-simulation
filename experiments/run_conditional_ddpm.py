@@ -407,6 +407,8 @@ def main() -> None:
                         help="Oversample crisis windows N times in training (default: 1)")
     parser.add_argument("--regime-weight", action="store_true",
                         help="Use inverse-frequency weighting across all regimes during training")
+    parser.add_argument("--guidance-scale", type=float, default=None,
+                        help="Override guidance scale at generation time (default: CFG value=2.0)")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducibility (default: 42)")
     # fine-tune flags
@@ -428,6 +430,8 @@ def main() -> None:
     CFG["crisis_oversample"] = args.crisis_oversample
     CFG["use_regime_weight"] = args.regime_weight
     CFG["seed"]              = args.seed
+    if args.guidance_scale is not None:
+        CFG["guidance_scale"] = args.guidance_scale
 
     print(f"Device: {DEVICE}")
     if DEVICE == "cuda":

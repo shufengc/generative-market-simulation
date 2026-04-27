@@ -1,0 +1,128 @@
+{
+  "crisis": {
+    "before": {
+      "regime": "crisis",
+      "n": 724,
+      "sf_count": 2,
+      "sf_details": {
+        "Fat Tails": false,
+        "Volatility Clustering": false,
+        "Leverage Effect": true,
+        "Long Memory (Hurst)": false,
+        "Cross-Asset Correlations": true,
+        "No Raw Autocorrelation": false
+      },
+      "mmd": 0.004982,
+      "discriminative_score": 0.7907,
+      "correlation_distance": 4.1301,
+      "syn_vol": 1.4242,
+      "real_vol": 1.6835,
+      "syn_kurtosis": 0.465,
+      "real_kurtosis": 5.05
+    },
+    "after": {
+      "regime": "crisis",
+      "n": 724,
+      "sf_count": 2,
+      "sf_details": {
+        "Fat Tails": false,
+        "Volatility Clustering": false,
+        "Leverage Effect": true,
+        "Long Memory (Hurst)": false,
+        "Cross-Asset Correlations": true,
+        "No Raw Autocorrelation": false
+      },
+      "mmd": 0.003091,
+      "discriminative_score": 0.6643,
+      "correlation_distance": 3.6579,
+      "syn_vol": 1.6878,
+      "real_vol": 1.6835,
+      "syn_kurtosis": 5.109,
+      "real_kurtosis": 5.05
+    }
+  },
+  "calm": {
+    "before": {
+      "regime": "calm",
+      "n": 1000,
+      "sf_count": 2,
+      "sf_details": {
+        "Fat Tails": false,
+        "Volatility Clustering": false,
+        "Leverage Effect": false,
+        "Long Memory (Hurst)": true,
+        "Cross-Asset Correlations": true,
+        "No Raw Autocorrelation": false
+      },
+      "mmd": 0.051454,
+      "discriminative_score": 0.9069,
+      "correlation_distance": 6.072,
+      "syn_vol": 0.4471,
+      "real_vol": 0.6435,
+      "syn_kurtosis": 0.844,
+      "real_kurtosis": 5.491
+    },
+    "after": {
+      "regime": "calm",
+      "n": 1000,
+      "sf_count": 3,
+      "sf_details": {
+        "Fat Tails": false,
+        "Volatility Clustering": false,
+        "Leverage Effect": true,
+        "Long Memory (Hurst)": true,
+        "Cross-Asset Correlations": true,
+        "No Raw Autocorrelation": false
+      },
+      "mmd": 0.006514,
+      "discriminative_score": 0.598,
+      "correlation_distance": 6.0436,
+      "syn_vol": 0.7005,
+      "real_vol": 0.6435,
+      "syn_kurtosis": 8.724,
+      "real_kurtosis": 5.491
+    }
+  },
+  "normal": {
+    "before": {
+      "regime": "normal",
+      "n": 1000,
+      "sf_count": 3,
+      "sf_details": {
+        "Fat Tails": true,
+        "Volatility Clustering": false,
+        "Leverage Effect": true,
+        "Long Memory (Hurst)": false,
+        "Cross-Asset Correlations": true,
+        "No Raw Autocorrelation": false
+      },
+      "mmd": 0.022242,
+      "discriminative_score": 0.7024,
+      "correlation_distance": 2.0423,
+      "syn_vol": 0.6518,
+      "real_vol": 0.9474,
+      "syn_kurtosis": 2.07,
+      "real_kurtosis": 4.183
+    },
+    "after": {
+      "regime": "normal",
+      "n": 1000,
+      "sf_count": 3,
+      "sf_details": {
+        "Fat Tails": true,
+        "Volatility Clustering": false,
+        "Leverage Effect": true,
+        "Long Memory (Hurst)": false,
+        "Cross-Asset Correlations": true,
+        "No Raw Autocorrelation": false
+      },
+      "mmd": 0.001253,
+      "discriminative_score": 0.5175,
+      "correlation_distance": 2.015,
+      "syn_vol": 0.938,
+      "real_vol": 0.9474,
+      "syn_kurtosis": 4.209,
+      "real_kurtosis": 4.183
+    }
+  }
+}

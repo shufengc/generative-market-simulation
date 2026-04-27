@@ -5,12 +5,13 @@ Part 1 of the L3/L4 v2 iteration.
 
 Post-hoc rescaling: loads the existing conditional DDPM checkpoint,
 generates regime-conditioned samples, then rescales to match the real
-marginal distribution using one of three modes.
+marginal distribution using one of four modes.
 
 Modes:
-  std            -- match per-asset standard deviation only (original)
-  quantile       -- full quantile mapping per asset (matches kurtosis by construction)
-  cornish-fisher -- Cornish-Fisher moment matching (mean, std, skew, kurtosis)
+  std             -- match per-asset standard deviation only (original)
+  quantile        -- full quantile mapping per asset (matches kurtosis by construction)
+  cornish-fisher  -- Cornish-Fisher moment matching (mean, std, skew, kurtosis)
+  regime-quantile -- regime-stratified quantile mapping (novel; avoids cross-regime contamination)
 
 Outputs:
   experiments/results/conditional_ddpm_v2/{rescaling|moment_matching}/
@@ -164,6 +165,72 @@ def apply_rescaling(synthetic: np.ndarray, real: np.ndarray, mode: str) -> np.nd
         raise ValueError(f"Unknown rescaling mode: {mode}")
 
 
+def regime_quantile_map(
+    synthetic: np.ndarray,
+    real_windows: np.ndarray,
+    real_regimes: np.ndarray,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """
+    Regime-conditional quantile mapping for unconditional synthetic paths.
+
+    Standard (flat) QM mixes regime distributions: calm-like synthetic windows
+    get mapped against crisis-regime real quantiles, artificially amplifying tails
+    (observed as calm kurtosis 8.72 vs real 5.49, driving 95% Kupiec failure).
+
+    This function:
+    1. Estimates each synthetic window's regime by its per-window realized vol.
+    2. Derives vol-percentile thresholds from the *real* data distribution
+       (no training label leakage — only the real data's own statistics).
+    3. Applies quantile_map() per group using only the matching real-regime windows.
+
+    Classification uses the 30th and 70th percentiles of real per-window vol,
+    chosen to roughly match crisis/calm/normal proportions (14%/40%/46%).
+    """
+    if rng is None:
+        rng = np.random.default_rng(seed=42)
+
+    # ── Real data vol thresholds (derived from real distribution only)
+    real_per_window_vol = real_windows.reshape(real_windows.shape[0], -1).std(axis=1)
+    thresh_low  = float(np.percentile(real_per_window_vol, 30))   # calm  = below 30th pct
+    thresh_high = float(np.percentile(real_per_window_vol, 70))   # crisis = above 70th pct
+
+    # ── Classify synthetic windows by realized vol
+    syn_vol = synthetic.reshape(synthetic.shape[0], -1).std(axis=1)
+    mask_crisis = syn_vol >= thresh_high
+    mask_calm   = syn_vol <  thresh_low
+    mask_normal = ~mask_crisis & ~mask_calm
+
+    print(f"  Regime-QM window counts: crisis={mask_crisis.sum()}  "
+          f"calm={mask_calm.sum()}  normal={mask_normal.sum()}  "
+          f"(vol thresholds: low={thresh_low:.4f} high={thresh_high:.4f})")
+
+    # ── Real windows per regime
+    real_by_regime = {
+        "crisis": real_windows[real_regimes == 1],   # crisis=1
+        "calm":   real_windows[real_regimes == 2],   # calm=2
+        "normal": real_windows[real_regimes == 0],   # normal=0
+    }
+
+    result = synthetic.copy()
+
+    for mask, regime_key in [
+        (mask_crisis, "crisis"),
+        (mask_calm,   "calm"),
+        (mask_normal, "normal"),
+    ]:
+        if mask.sum() == 0:
+            continue
+        syn_group  = synthetic[mask]
+        real_group = real_by_regime[regime_key]
+        if len(real_group) == 0:
+            print(f"  WARNING: no real windows for regime '{regime_key}', skipping QM")
+            continue
+        result[mask] = quantile_map(syn_group, real_group, rng=rng)
+
+    return result
+
+
 # ─────────────────────────────────────────────────────────────
 # Per-regime evaluation (before and after rescaling)
 # ─────────────────────────────────────────────────────────────
@@ -246,10 +313,11 @@ def main() -> None:
     parser.add_argument("--no-plot", action="store_true")
     parser.add_argument(
         "--mode",
-        choices=["std", "quantile", "cornish-fisher"],
+        choices=["std", "quantile", "cornish-fisher", "regime-quantile"],
         default="std",
         help="Rescaling mode: std (std-match only), quantile (full quantile map), "
-             "cornish-fisher (moment matching via CF expansion). Default: std",
+             "cornish-fisher (moment matching via CF expansion), "
+             "regime-quantile (stratified QM per synthetic regime). Default: std",
     )
     parser.add_argument("--ckpt", type=str, default=None,
                         help="Override checkpoint path (default: ddpm_conditional.pt)")
@@ -260,6 +328,8 @@ def main() -> None:
     args = parser.parse_args()
 
     out_base = OUT_DIR_STD if args.mode == "std" else (OUT_DIR_CF if args.mode == "cornish-fisher" else OUT_DIR_QM)
+    if args.mode == "regime-quantile":
+        out_base = os.path.join(ROOT, "experiments", "results", "conditional_ddpm_v2", "moment_matching_rqm")
     if args.out_tag:
         out_base = out_base.rstrip("/") + f"_{args.out_tag}"
     OUT_DIR = out_base
@@ -303,7 +373,8 @@ def main() -> None:
         print(f"  Evaluating raw ...")
         before = eval_one(real_reg, syn_raw, regime_name)
 
-        syn_resc = apply_rescaling(syn_raw, real_reg, args.mode)
+        syn_resc = apply_rescaling(syn_raw, real_reg,
+                                   "quantile" if args.mode == "regime-quantile" else args.mode)
         print(f"  Evaluating {args.mode}-rescaled ...")
         after  = eval_one(real_reg, syn_resc, regime_name)
 
@@ -322,7 +393,12 @@ def main() -> None:
         n_samples=args.n_paths, use_ddim=True, ddim_steps=50,
         guidance_scale=1.0, ddim_eta=0.0, cond=None,
     )
-    syn_uncond_resc = apply_rescaling(syn_uncond_raw, windows, args.mode)
+    if args.mode == "regime-quantile":
+        print(f"[L4] Applying regime-conditional quantile mapping ...")
+        rng = np.random.default_rng(seed=42)
+        syn_uncond_resc = regime_quantile_map(syn_uncond_raw, windows, window_regimes, rng=rng)
+    else:
+        syn_uncond_resc = apply_rescaling(syn_uncond_raw, windows, args.mode)
     real_pnl        = portfolio_returns(windows).sum(-1)
     pnl_raw         = portfolio_returns(syn_uncond_raw).sum(-1)
     pnl_resc        = portfolio_returns(syn_uncond_resc).sum(-1)
