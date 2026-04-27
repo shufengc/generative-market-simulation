@@ -9,6 +9,13 @@ Usage:
     python experiments/run_conditional_ddpm.py
     python experiments/run_conditional_ddpm.py --skip-train   # eval only
     python experiments/run_conditional_ddpm.py --skip-eval    # train only
+
+v2 ablation flags:
+    --tag TAG            output subdirectory tag (default: v1)
+    --student-t-df DF   Student-t degrees of freedom (default: 5.0)
+    --aux-sf-loss        enable auxiliary kurtosis+ACF loss
+    --decorr-reg         enable decorrelation regularizer (SF6)
+    --crisis-oversample N  oversample crisis windows N times (default: 1)
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ from src.evaluation.stylized_facts import run_all_tests             # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────
-# Config
+# Base config (overridden by CLI where applicable)
 # ─────────────────────────────────────────────────────────────
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -44,7 +51,7 @@ CFG = {
     "channel_mults": (1, 2, 4),
     "use_vpred": True,
     "use_student_t_noise": True,
-    "student_t_df": 5.0,
+    "student_t_df": 5.0,          # overridden by --student-t-df
     "ema_decay": 0.9999,
     "use_ddim": True,
     "ddim_steps": 50,
@@ -55,22 +62,42 @@ CFG = {
     "batch_size": 64,
     "lr": 2e-4,
     "seed": 42,
+    # ablation flags (overridden by CLI)
+    "use_aux_sf_loss":  False,
+    "aux_sf_weight":    0.1,
+    "use_decorr_reg":   False,
+    "decorr_weight":    0.05,
+    "crisis_oversample": 1,
+    "tag": "v1",
     "data_dir":       os.path.join(ROOT, "data"),
     "checkpoint_dir": os.path.join(ROOT, "checkpoints"),
-    "output_dir":     os.path.join(ROOT, "experiments", "results", "conditional_ddpm"),
 }
 
 REGIMES = ["crisis", "calm", "normal"]
 
 
+def _output_dir() -> str:
+    tag = CFG["tag"]
+    if tag == "v1":
+        return os.path.join(ROOT, "experiments", "results", "conditional_ddpm")
+    return os.path.join(ROOT, "experiments", "results", "conditional_ddpm_v2", tag)
+
+
+def _ckpt_name() -> str:
+    tag = CFG["tag"]
+    if tag == "v1":
+        return "ddpm_conditional.pt"
+    return f"ddpm_conditional_{tag}.pt"
+
+
 # ─────────────────────────────────────────────────────────────
-# Data loading  (all files already exist in data/)
+# Data loading
 # ─────────────────────────────────────────────────────────────
 def load_data():
     data_dir = CFG["data_dir"]
-    windows       = np.load(os.path.join(data_dir, "windows.npy"))        # (N, 60, D)
-    window_cond   = np.load(os.path.join(data_dir, "window_cond.npy"))    # (N, 5)
-    window_regimes = np.load(os.path.join(data_dir, "window_regimes.npy"))# (N,)
+    windows        = np.load(os.path.join(data_dir, "windows.npy"))
+    window_cond    = np.load(os.path.join(data_dir, "window_cond.npy"))
+    window_regimes = np.load(os.path.join(data_dir, "window_regimes.npy"))
 
     print(f"  Windows:  {windows.shape}  dtype={windows.dtype}")
     print(f"  Cond:     {window_cond.shape}  dtype={window_cond.dtype}")
@@ -78,6 +105,20 @@ def load_data():
     counts = {name: int((window_regimes == i).sum())
               for i, name in enumerate(["normal", "crisis", "calm"])}
     print(f"  Regime distribution: {counts}")
+
+    # Optional crisis oversampling
+    n_oversample = CFG["crisis_oversample"]
+    if n_oversample > 1:
+        crisis_mask = window_regimes == 1   # crisis == 1
+        n_before = windows.shape[0]
+        extra_w = np.tile(windows[crisis_mask], (n_oversample - 1, 1, 1))
+        extra_c = np.tile(window_cond[crisis_mask], (n_oversample - 1, 1))
+        extra_r = np.tile(window_regimes[crisis_mask], n_oversample - 1)
+        windows        = np.concatenate([windows, extra_w], axis=0)
+        window_cond    = np.concatenate([window_cond, extra_c], axis=0)
+        window_regimes = np.concatenate([window_regimes, extra_r], axis=0)
+        print(f"  Crisis oversampled {n_oversample}x: {n_before} -> {windows.shape[0]} windows")
+
     return windows, window_cond, window_regimes
 
 
@@ -96,6 +137,10 @@ def build_model(n_features: int) -> ImprovedDDPM:
         use_student_t_noise=CFG["use_student_t_noise"],
         student_t_df=CFG["student_t_df"],
         cfg_drop_prob=CFG["cfg_drop_prob"],
+        use_aux_sf_loss=CFG["use_aux_sf_loss"],
+        aux_sf_weight=CFG["aux_sf_weight"],
+        use_decorr_reg=CFG["use_decorr_reg"],
+        decorr_weight=CFG["decorr_weight"],
         device=DEVICE,
     )
 
@@ -105,6 +150,8 @@ def train(windows: np.ndarray, window_cond: np.ndarray) -> ImprovedDDPM:
     n_features = windows.shape[2]
 
     print(f"\nBuilding ImprovedDDPM  n_features={n_features}  cond_dim={CFG['cond_dim']}  device={DEVICE}")
+    print(f"  student_t_df={CFG['student_t_df']}  aux_sf_loss={CFG['use_aux_sf_loss']}"
+          f"  decorr_reg={CFG['use_decorr_reg']}  crisis_oversample={CFG['crisis_oversample']}x")
     model = build_model(n_features)
     n_params = sum(p.numel() for p in model.net.parameters())
     print(f"  Parameters: {n_params:,}")
@@ -123,7 +170,7 @@ def train(windows: np.ndarray, window_cond: np.ndarray) -> ImprovedDDPM:
     print(f"Training completed in {elapsed / 3600:.2f} hours  ({elapsed:.0f} s)")
 
     os.makedirs(CFG["checkpoint_dir"], exist_ok=True)
-    ckpt_path = os.path.join(CFG["checkpoint_dir"], "ddpm_conditional.pt")
+    ckpt_path = os.path.join(CFG["checkpoint_dir"], _ckpt_name())
     model.save(ckpt_path)
     print(f"Checkpoint saved: {ckpt_path}")
     return model
@@ -134,14 +181,19 @@ def train(windows: np.ndarray, window_cond: np.ndarray) -> ImprovedDDPM:
 # ─────────────────────────────────────────────────────────────
 def evaluate_conditional(model: ImprovedDDPM, windows: np.ndarray,
                           window_regimes: np.ndarray) -> dict:
-    os.makedirs(CFG["output_dir"], exist_ok=True)
+    out_dir = _output_dir()
+    os.makedirs(out_dir, exist_ok=True)
     regime_vectors = get_regime_conditioning_vectors()
     results = {}
     n_gen = 1000
 
+    # Use unoversampled windows for evaluation (real distribution unchanged)
+    windows_npy = np.load(os.path.join(CFG["data_dir"], "windows.npy"))
+    reg_npy     = np.load(os.path.join(CFG["data_dir"], "window_regimes.npy"))
+
     for regime_name in REGIMES:
         print(f"\n--- Generating {n_gen} samples: regime={regime_name} ---")
-        cond_vec = regime_vectors[regime_name]   # shape (5,)
+        cond_vec = regime_vectors[regime_name]
 
         synthetic = model.generate(
             n_samples=n_gen,
@@ -153,23 +205,18 @@ def evaluate_conditional(model: ImprovedDDPM, windows: np.ndarray,
         )
         print(f"  Generated shape: {synthetic.shape}")
 
-        # Matched real windows for this regime
-        regime_int = {"crisis": 1, "calm": 2, "normal": 0}[regime_name]
-        mask = window_regimes == regime_int
-        real_regime = windows[mask]
+        regime_int  = {"crisis": 1, "calm": 2, "normal": 0}[regime_name]
+        mask        = reg_npy == regime_int
+        real_regime = windows_npy[mask]
         if len(real_regime) < 50:
             print(f"  WARNING: only {len(real_regime)} real windows for '{regime_name}'")
-        n_real = min(len(real_regime), n_gen)
+        n_real      = min(len(real_regime), n_gen)
         real_subset = real_regime[:n_real]
 
-        # Distributional metrics (real vs synthetic)
-        metrics = full_evaluation(real_subset, synthetic[:n_real])
-
-        # Stylized facts on synthetic (absolute thresholds, no reference)
-        sf_list = run_all_tests(synthetic)
+        metrics  = full_evaluation(real_subset, synthetic[:n_real])
+        sf_list  = run_all_tests(synthetic)
         sf_count = sum(1 for r in sf_list if r.get("pass", False))
 
-        # Volatility sanity check
         syn_flat = synthetic.reshape(-1, synthetic.shape[-1])
         vol_mean = float(np.std(syn_flat, axis=0).mean())
         vol_max  = float(np.std(syn_flat, axis=0).max())
@@ -186,12 +233,16 @@ def evaluate_conditional(model: ImprovedDDPM, windows: np.ndarray,
               f"Disc: {metrics['discriminative_score']:.3f}  "
               f"Vol(mean): {vol_mean:.4f}")
 
-        np.save(os.path.join(CFG["output_dir"], f"synthetic_{regime_name}.npy"), synthetic)
+        np.save(os.path.join(out_dir, f"synthetic_{regime_name}.npy"), synthetic)
 
-    # Save JSON
-    out_json = os.path.join(CFG["output_dir"], "conditional_eval_results.json")
+    out_json = os.path.join(out_dir, "conditional_eval_results.json")
     with open(out_json, "w") as f:
         json.dump(results, f, indent=2)
+    # also save the config used
+    cfg_json = os.path.join(out_dir, "run_config.json")
+    with open(cfg_json, "w") as f:
+        json.dump({k: v for k, v in CFG.items() if not k.endswith("_dir")
+                   and not isinstance(v, tuple)}, f, indent=2)
     print(f"\nResults saved: {out_json}")
 
     print("\n" + "=" * 65)
@@ -210,18 +261,22 @@ def make_regime_plots(windows: np.ndarray, window_regimes: np.ndarray) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    out_dir = _output_dir()
+    # Use unoversampled windows for real distribution plots
+    windows_npy = np.load(os.path.join(CFG["data_dir"], "windows.npy"))
+    reg_npy     = np.load(os.path.join(CFG["data_dir"], "window_regimes.npy"))
+
     colors = {"crisis": "#e53935", "calm": "#43a047", "normal": "#1e88e5"}
 
-    # Return distribution per regime
     fig, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
     for ax, regime_name in zip(axes, REGIMES):
-        syn_path = os.path.join(CFG["output_dir"], f"synthetic_{regime_name}.npy")
+        syn_path = os.path.join(out_dir, f"synthetic_{regime_name}.npy")
         if not os.path.exists(syn_path):
             continue
-        synthetic = np.load(syn_path)
+        synthetic  = np.load(syn_path)
         regime_int = {"crisis": 1, "calm": 2, "normal": 0}[regime_name]
-        mask = window_regimes == regime_int
-        ax.hist(windows[mask].reshape(-1), bins=80, alpha=0.5, density=True,
+        mask       = reg_npy == regime_int
+        ax.hist(windows_npy[mask].reshape(-1), bins=80, alpha=0.5, density=True,
                 color="#546e7a", label="Real")
         ax.hist(synthetic.reshape(-1), bins=80, alpha=0.6, density=True,
                 color=colors[regime_name], label=f"Synthetic ({regime_name})")
@@ -229,41 +284,36 @@ def make_regime_plots(windows: np.ndarray, window_regimes: np.ndarray) -> None:
         ax.set_xlabel("Return (z-scored)", fontsize=10)
         ax.set_ylabel("Density", fontsize=10)
         ax.legend(fontsize=9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
 
-    fig.suptitle("Return Distribution by Regime — Real vs Conditional DDPM",
+    fig.suptitle(f"Return Distribution by Regime — DDPM [{CFG['tag']}]",
                  fontsize=14, fontweight="bold", y=1.02)
     fig.tight_layout()
-    out = os.path.join(CFG["output_dir"], "regime_distributions.png")
+    out = os.path.join(out_dir, "regime_distributions.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")
 
-    # Volatility profile per regime
     fig, ax = plt.subplots(figsize=(10, 5))
     for regime_name in REGIMES:
-        syn_path = os.path.join(CFG["output_dir"], f"synthetic_{regime_name}.npy")
+        syn_path = os.path.join(out_dir, f"synthetic_{regime_name}.npy")
         if not os.path.exists(syn_path):
             continue
-        synthetic = np.load(syn_path)   # (N, 60, D)
+        synthetic   = np.load(syn_path)
         rolling_vol = np.array([
             np.std(synthetic[:, max(0, t - 5):t + 1, :])
             for t in range(60)
         ])
         ax.plot(rolling_vol, label=regime_name.capitalize(),
                 color=colors[regime_name], linewidth=2)
-
     ax.set_xlabel("Timestep within 60-day window", fontsize=12)
     ax.set_ylabel("Rolling Volatility (std)", fontsize=12)
-    ax.set_title("Volatility Profile by Regime — Conditional DDPM",
+    ax.set_title(f"Volatility Profile by Regime — DDPM [{CFG['tag']}]",
                  fontsize=14, fontweight="bold")
-    ax.legend(fontsize=11)
-    ax.grid(alpha=0.3)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    ax.legend(fontsize=11); ax.grid(alpha=0.3)
+    ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     fig.tight_layout()
-    out = os.path.join(CFG["output_dir"], "regime_volatility_profiles.png")
+    out = os.path.join(out_dir, "regime_volatility_profiles.png")
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"Saved: {out}")
@@ -278,18 +328,40 @@ def main() -> None:
                         help="Skip training, load existing checkpoint")
     parser.add_argument("--skip-eval",  action="store_true",
                         help="Train only, skip evaluation and plots")
+    # v2 ablation flags
+    parser.add_argument("--tag", type=str, default="v1",
+                        help="Output subdirectory tag, e.g. 'expA_df3' (default: v1)")
+    parser.add_argument("--student-t-df", type=float, default=5.0,
+                        help="Degrees of freedom for Student-t noise (default: 5.0)")
+    parser.add_argument("--aux-sf-loss", action="store_true",
+                        help="Enable auxiliary kurtosis+ACF loss")
+    parser.add_argument("--decorr-reg", action="store_true",
+                        help="Enable decorrelation regularizer (targets SF6)")
+    parser.add_argument("--crisis-oversample", type=int, default=1,
+                        help="Oversample crisis windows N times in training (default: 1)")
     args = parser.parse_args()
+
+    # Apply CLI overrides to CFG
+    CFG["tag"]              = args.tag
+    CFG["student_t_df"]     = args.student_t_df
+    CFG["use_aux_sf_loss"]  = args.aux_sf_loss
+    CFG["use_decorr_reg"]   = args.decorr_reg
+    CFG["crisis_oversample"] = args.crisis_oversample
 
     print(f"Device: {DEVICE}")
     if DEVICE == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Tag: {CFG['tag']}  student_t_df={CFG['student_t_df']}"
+          f"  aux_sf_loss={CFG['use_aux_sf_loss']}"
+          f"  decorr_reg={CFG['use_decorr_reg']}"
+          f"  crisis_oversample={CFG['crisis_oversample']}x")
 
     print("\nLoading data ...")
     windows, window_cond, window_regimes = load_data()
     n_features = windows.shape[2]
 
     if args.skip_train:
-        ckpt_path = os.path.join(CFG["checkpoint_dir"], "ddpm_conditional.pt")
+        ckpt_path = os.path.join(CFG["checkpoint_dir"], _ckpt_name())
         print(f"\nLoading checkpoint: {ckpt_path}")
         model = build_model(n_features)
         model.load(ckpt_path)
