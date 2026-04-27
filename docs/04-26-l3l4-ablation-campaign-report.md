@@ -551,8 +551,148 @@ Guidance scale swept in {1.0, 2.0, 3.0, 5.0, 7.0} at generation time only (no re
 - Post-hoc rescaling reduces VaR error from 68% to 46% but Kupiec still fails.
 - The fat-tail structure (kurtosis) is the unsolved core problem. Until synthetic kurtosis matches real (5.0 for crisis, 5.5 for calm), VaR at high confidence levels will remain under-estimated.
 
-**Remaining open problems for future work:**
-1. Calm regime fat tails — likely requires explicit tail conditioning or a heavier generative prior
-2. Kurtosis calibration — a post-hoc kurtosis-matching step (matching not just std but higher moments) may close the VaR gap without retraining
-3. Kupiec test passage — target: VaR error < 20% at 95% confidence
+---
+
+## 1-Day Sprint Plan (High Value-Time Ratio)
+
+This section is written as an executable plan for the next agent session. We have ~1 day remaining. Every item is ranked by (expected impact) / (implementation hours). The checkpoint `ddpm_conditional_expB_aux_sf.pt` is the recommended base for all no-retrain experiments; `ddpm_conditional_expC_decorr.pt` is the backup for crisis-specific tasks.
+
+---
+
+### Priority 1 — Post-hoc Moment Matching (~2h, highest ROI)
+
+**Why:** Rescaling fixes vol (std) but kurtosis stays near 0 (synthetic) vs 5.0–5.5 (real). This is the root cause of Kupiec failure. Matching the first four moments (mean, std, skew, kurtosis) without retraining takes 1 hour to code and tests the hypothesis cleanly.
+
+**Method — quantile mapping per asset:**
+
+For each asset `i` in regime `r`:
+1. Sort the synthetic returns `syn[:, :, i].flatten()` and real returns `real[:, :, i].flatten()`.
+2. Map each synthetic quantile to the corresponding real quantile (`np.interp`).
+3. This exactly matches the full marginal distribution (including kurtosis) by construction.
+
+Alternative (lighter): Cornish-Fisher expansion to match mean, std, skew, kurtosis analytically:
+```python
+z = (syn - syn_mean) / syn_std          # standardise
+cf = z + (skew/6)*(z**2 - 1) + (kurt/24)*(z**3 - 3*z) - (skew**2/36)*(2*z**3 - 5*z)
+matched = cf * real_std + real_mean
+```
+
+**Code change:** Extend `experiments/run_rescaling_ablation.py` with a `--mode` flag:
+- `--mode std` (existing)
+- `--mode quantile` (new: full quantile mapping)
+- `--mode cornish-fisher` (new: moment matching)
+
+**Success criterion:** Kupiec hit rate within ±0.005 of nominal (0.05 at 95%, 0.01 at 99%).
+
+**Expected output:** `experiments/results/conditional_ddpm_v2/moment_matching/`
+
+---
+
+### Priority 2 — Best-of-Breed Checkpoint Routing (~1h, zero retraining)
+
+**Why:** Exp C has the best crisis (5/6 SF, though vol is low) and Exp B has the best calm (3/6 SF, consistent). No single checkpoint dominates all regimes. We can route regime-specific generation to the best checkpoint per regime.
+
+**Method:** Write `experiments/run_regime_router.py`:
+```python
+REGIME_CKPT = {
+    "crisis": "checkpoints/ddpm_conditional_expC_decorr.pt",   # 5/6 SF
+    "calm":   "checkpoints/ddpm_conditional_expB_aux_sf.pt",   # 3/6 SF
+    "normal": "checkpoints/ddpm_conditional_expD_oversample.pt", # 5/6 SF, best Disc 0.704
+}
+```
+Load each checkpoint, generate regime-conditioned samples, then combine and re-evaluate together. This is the highest possible SF score without more training.
+
+**Expected best-case combined score:** Crisis 5/6 + Calm 3/6 + Normal 5/6 — a first across all regimes.
+
+**Code change:** New ~80-line script. No model changes.
+
+**Expected output:** `experiments/results/conditional_ddpm_v2/regime_router/`
+
+---
+
+### Priority 3 — Presentation Figure Refresh (~2h)
+
+After Priority 1 and 2 produce improved numbers, update the slide deck visuals:
+
+1. **Ablation comparison bar chart** — v1 baseline vs 5 ablation configs vs moment-matched vs regime-routed. Plot per-regime SF count and Disc score side by side.
+   - Output: `presentation_assets/v2_ablation_comparison.png`
+
+2. **Rescaling before/after** — already generated in `conditional_ddpm_v2/rescaling/`. Refresh after quantile mapping to show the kurtosis fix.
+   - Output: `presentation_assets/v2_moment_matching.png`
+
+3. **Guidance sweep** — line plot of crisis Disc and vol vs guidance_scale. Shows the trade-off clearly.
+   - Output: `presentation_assets/v2_guidance_sweep.png`
+
+4. **Architecture diagram** — already done (`presentation_assets/architecture_ddpm_pipeline.png`).
+
+**Code change:** Add a `scripts/generate_v2_figures.py` that pulls from all v2 JSON results and outputs these three PNGs.
+
+---
+
+### Priority 4 — Calm Regime Targeted Fine-Tune (~1h if time permits)
+
+**Why:** Calm kurtosis is 0 (synthetic) vs 5.5 (real). The most likely cause: calm windows have quiet but fat-tailed returns; the model learns the quiet part (low vol) but not the fat tails because they are rare within each window. A targeted fine-tune with stronger kurtosis loss may help.
+
+**Method:** On the 5090, starting from `ddpm_conditional_expB_aux_sf.pt`:
+```bash
+python3 experiments/run_conditional_ddpm.py \
+  --skip-train              # Load existing checkpoint
+  --tag expF_calm_finetune  # NEW: need to implement fine-tune mode
+```
+
+This requires a small addition to `run_conditional_ddpm.py`: a `--finetune-regime` flag that filters training data to only calm windows and optionally ups `aux_sf_weight` to 0.3. Then runs 100 epochs at `lr=5e-5`.
+
+**Estimated gain:** Uncertain. If kurtosis improves from 0 to ≥2.0, consider this a success. If not, deprioritise in favour of Priority 1 (moment matching is more reliable).
+
+---
+
+### Priority 5 — L4 Final Verdict Re-run (~30min, after Priority 1)
+
+After moment matching, re-run `var_backtest.py` with the moment-matched samples:
+```bash
+python3 experiments/var_backtest.py \
+  --results-dir experiments/results/conditional_ddpm_v2/moment_matching \
+  --n-paths 5000
+```
+
+**Success criterion:** Kupiec passes at ≥1 confidence level (95% or 99%). If both pass, L4 is delivered.
+
+---
+
+### Execution Order for Next Agent
+
+| Step | Action | Time | Dependency |
+|------|--------|------|------------|
+| 1 | Implement `--mode quantile` in `run_rescaling_ablation.py` | 30 min | None |
+| 2 | Run moment matching on 5090 (no GPU needed, CPU is fine) | 10 min | Step 1 |
+| 3 | Check Kupiec result — if PASS, L4 is done | 5 min | Step 2 |
+| 4 | Write and run `run_regime_router.py` | 30 min | None |
+| 5 | Evaluate combined regime-routed samples | 10 min | Step 4 |
+| 6 | If time: implement calm fine-tune flag and run on 5090 | 60 min | Steps 1–5 done |
+| 7 | Generate v2 presentation figures | 60 min | Steps 1–5 |
+| 8 | Update report section, commit, push, merge to main | 20 min | All |
+
+**Total estimated time: 3–4 hours.** If moment matching passes Kupiec (Priority 1), that is a presentation-quality result that directly closes L4.
+
+---
+
+### Files to Create / Modify in Next Session
+
+| File | Action | Notes |
+|------|--------|-------|
+| `experiments/run_rescaling_ablation.py` | Modify | Add `--mode {std,quantile,cornish-fisher}` flag |
+| `experiments/run_regime_router.py` | Create | ~80 lines, load 3 checkpoints, generate + evaluate |
+| `experiments/run_conditional_ddpm.py` | Modify | Add `--finetune-regime calm --finetune-lr 5e-5 --finetune-epochs 100` |
+| `scripts/generate_v2_figures.py` | Create | Pull from all v2 JSON, output 3 PNGs |
+| `docs/04-26-l3l4-ablation-campaign-report.md` | Modify | Append Priority 1–5 results |
+
+### Checkpoints Available on 5090
+
+| Tag | Path | Best For |
+|-----|------|----------|
+| v1 baseline | `checkpoints/ddpm_conditional.pt` | Reference |
+| Exp B aux_sf | `checkpoints/ddpm_conditional_expB_aux_sf.pt` | Calm SF / overall balance |
+| Exp C decorr | `checkpoints/ddpm_conditional_expC_decorr.pt` | Crisis SF (5/6) |
+| Exp D oversample | `checkpoints/ddpm_conditional_expD_oversample.pt` | Normal SF + crisis Disc |
+| Exp E combined | `checkpoints/ddpm_conditional_expE_combined.pt` | Best crisis Disc (0.642) |
 
