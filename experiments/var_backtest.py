@@ -63,6 +63,30 @@ def hit_rate(real_pnl: np.ndarray, var_synthetic: float) -> float:
     return float((-real_pnl > var_synthetic).sum() / len(real_pnl))
 
 
+def kupiec_lr(real_pnl: np.ndarray, var_syn: float, conf: float) -> dict:
+    """Kupiec (1995) LR unconditional coverage test.  LR ~ chi2(1) under H0."""
+    from scipy.stats import chi2 as _chi2
+    n = len(real_pnl)
+    n_exc = int((-real_pnl > var_syn).sum())
+    p_hat = n_exc / n
+    p_0   = 1.0 - conf
+    if n_exc == 0 or n_exc == n:
+        lr_stat, p_value = 0.0, 1.0
+    else:
+        lr_stat = 2.0 * (
+            n_exc * np.log(p_hat / p_0)
+            + (n - n_exc) * np.log((1.0 - p_hat) / (1.0 - p_0))
+        )
+        p_value = float(1.0 - _chi2.cdf(lr_stat, df=1))
+    return {
+        "hit_rate":    round(p_hat, 4),
+        "nominal":     p_0,
+        "kupiec_pass": p_value > 0.05,
+        "p_value":     round(p_value, 4),
+        "lr_stat":     round(lr_stat, 4),
+    }
+
+
 def sharpe_ratio(returns: np.ndarray, risk_free: float = 0.0) -> float:
     excess = returns - risk_free / 252
     return float(np.mean(excess) / np.std(excess) * np.sqrt(252)) if np.std(excess) > 1e-8 else 0.0
@@ -161,7 +185,6 @@ def run_backtest(real_windows: np.ndarray, synthetic_windows: np.ndarray,
     for conf in CONFIDENCE_LEVELS:
         var_real, cvar_real = var_cvar(real_pnl, conf)
         var_syn,  cvar_syn  = var_cvar(syn_pnl,  conf)
-        hit = hit_rate(real_pnl, var_syn)
         nominal = 1.0 - conf
         key = f"{conf:.0%}"
         results["var_cvar"][key] = {
@@ -171,11 +194,7 @@ def run_backtest(real_windows: np.ndarray, synthetic_windows: np.ndarray,
             "CVaR_synthetic":        round(cvar_syn,  5),
             "VaR_relative_error_pct": round(abs(var_syn - var_real) / (abs(var_real) + 1e-8) * 100, 2),
         }
-        results["hit_rates"][key] = {
-            "hit_rate":   round(hit, 4),
-            "nominal":    nominal,
-            "kupiec_pass": abs(hit - nominal) < 0.02,
-        }
+        results["hit_rates"][key] = kupiec_lr(real_pnl, var_syn, conf)
 
     results["sharpe"] = {
         "real_mean":    round(float(np.mean(real_sharpe)), 3),
@@ -212,7 +231,8 @@ def print_summary(results: dict) -> None:
         print(f"  VaR    Real={v['VaR_real']:>9.5f}  Synthetic={v['VaR_synthetic']:>9.5f}  "
               f"RelErr={v['VaR_relative_error_pct']:>5.1f}%")
         print(f"  CVaR   Real={v['CVaR_real']:>9.5f}  Synthetic={v['CVaR_synthetic']:>9.5f}")
-        print(f"  Kupiec coverage: hit={h['hit_rate']:.4f}  nominal={h['nominal']:.4f}  {verdict}")
+        print(f"  Kupiec LR: hit={h['hit_rate']:.4f}  nominal={h['nominal']:.4f}  "
+              f"p={h.get('p_value', 'n/a'):.4f}  {verdict}")
 
     s = results["sharpe"]
     print(f"\nSharpe Ratio:  Real mean={s['real_mean']:.3f} std={s['real_std']:.3f}  "
@@ -258,8 +278,9 @@ def make_plots(results: dict, real_pnl, syn_pnl, real_sharpe, syn_sharpe,
                     bar.get_height() + max(values) * 0.015,
                     f"{val:.4f}", ha="center", va="bottom", fontsize=9)
         kupiec_col = "#2e7d32" if h["kupiec_pass"] else "#c62828"
+        pv_str = f"p={h.get('p_value', 0.0):.3f}"
         ax.text(0.5, 0.97,
-                f"Kupiec: {h['hit_rate']:.3f} (nominal {h['nominal']:.2f})  "
+                f"Kupiec LR: hit={h['hit_rate']:.3f} nominal={h['nominal']:.2f} {pv_str}  "
                 + ("PASS" if h["kupiec_pass"] else "FAIL"),
                 transform=ax.transAxes, ha="center", va="top",
                 fontsize=9, color=kupiec_col,

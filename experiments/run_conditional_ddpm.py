@@ -68,6 +68,7 @@ CFG = {
     "use_decorr_reg":   False,
     "decorr_weight":    0.05,
     "crisis_oversample": 1,
+    "use_regime_weight": False,   # inverse-frequency weighting for all regimes
     "tag": "v1",
     "data_dir":       os.path.join(ROOT, "data"),
     "checkpoint_dir": os.path.join(ROOT, "checkpoints"),
@@ -145,16 +146,32 @@ def build_model(n_features: int) -> ImprovedDDPM:
     )
 
 
-def train(windows: np.ndarray, window_cond: np.ndarray) -> ImprovedDDPM:
+def train(windows: np.ndarray, window_cond: np.ndarray,
+          window_regimes: np.ndarray | None = None) -> ImprovedDDPM:
     np.random.seed(CFG["seed"])
     n_features = windows.shape[2]
 
     print(f"\nBuilding ImprovedDDPM  n_features={n_features}  cond_dim={CFG['cond_dim']}  device={DEVICE}")
     print(f"  student_t_df={CFG['student_t_df']}  aux_sf_loss={CFG['use_aux_sf_loss']}"
-          f"  decorr_reg={CFG['use_decorr_reg']}  crisis_oversample={CFG['crisis_oversample']}x")
+          f"  decorr_reg={CFG['use_decorr_reg']}  crisis_oversample={CFG['crisis_oversample']}x"
+          f"  regime_weight={CFG['use_regime_weight']}")
     model = build_model(n_features)
     n_params = sum(p.numel() for p in model.net.parameters())
     print(f"  Parameters: {n_params:,}")
+
+    # Compute inverse-frequency sample weights when --regime-weight is set
+    sample_weights = None
+    if CFG["use_regime_weight"] and window_regimes is not None:
+        unique_r, counts_r = np.unique(window_regimes, return_counts=True)
+        freq = dict(zip(unique_r, counts_r))
+        n_total = len(window_regimes)
+        # Weight each sample inversely proportional to its regime frequency
+        weights = np.array([n_total / freq[r] for r in window_regimes], dtype=np.float32)
+        weights /= weights.mean()   # normalise so mean weight = 1
+        sample_weights = weights
+        regime_names = {1: "crisis", 2: "calm", 0: "normal"}
+        for r, cnt in zip(unique_r, counts_r):
+            print(f"  regime {regime_names.get(r, r)}: {cnt} windows, weight={n_total/freq[r]:.2f}x")
 
     print(f"Training {CFG['epochs']} epochs  batch={CFG['batch_size']}  lr={CFG['lr']} ...")
     t0 = time.time()
@@ -165,6 +182,7 @@ def train(windows: np.ndarray, window_cond: np.ndarray) -> ImprovedDDPM:
         batch_size=CFG["batch_size"],
         lr=CFG["lr"],
         ema_decay=CFG["ema_decay"],
+        sample_weights=sample_weights,
     )
     elapsed = time.time() - t0
     print(f"Training completed in {elapsed / 3600:.2f} hours  ({elapsed:.0f} s)")
@@ -387,6 +405,10 @@ def main() -> None:
                         help="Enable decorrelation regularizer (targets SF6)")
     parser.add_argument("--crisis-oversample", type=int, default=1,
                         help="Oversample crisis windows N times in training (default: 1)")
+    parser.add_argument("--regime-weight", action="store_true",
+                        help="Use inverse-frequency weighting across all regimes during training")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility (default: 42)")
     # fine-tune flags
     parser.add_argument("--finetune-regime", type=str, default=None,
                         choices=["crisis", "calm", "normal"],
@@ -404,6 +426,8 @@ def main() -> None:
     CFG["use_aux_sf_loss"]  = args.aux_sf_loss
     CFG["use_decorr_reg"]   = args.decorr_reg
     CFG["crisis_oversample"] = args.crisis_oversample
+    CFG["use_regime_weight"] = args.regime_weight
+    CFG["seed"]              = args.seed
 
     print(f"Device: {DEVICE}")
     if DEVICE == "cuda":
@@ -423,7 +447,7 @@ def main() -> None:
         model = build_model(n_features)
         model.load(ckpt_path)
     else:
-        model = train(windows, window_cond)
+        model = train(windows, window_cond, window_regimes)
 
     # Optional fine-tune on a single regime
     if args.finetune_regime is not None:

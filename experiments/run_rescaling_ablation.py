@@ -79,26 +79,39 @@ def rescale_to_real(synthetic: np.ndarray, real: np.ndarray) -> np.ndarray:
     return syn
 
 
-def quantile_map(synthetic: np.ndarray, real: np.ndarray) -> np.ndarray:
+def quantile_map(synthetic: np.ndarray, real: np.ndarray,
+                  rng: np.random.Generator | None = None) -> np.ndarray:
     """
     Per-asset quantile mapping: map each synthetic value to the corresponding
-    real quantile.  Exactly matches the full marginal distribution (including
-    skew and kurtosis) by construction.
+    real quantile via rank-based interpolation.
 
-    Both arrays: (N, T, D).  Mapping is computed over the flattened (N*T) axis
-    and then reshaped back to (N, T, D).
+    Size-mismatch handling: when n_real > n_syn, subsample real values to n_syn
+    before computing the mapping grid.  Without this, compressed synthetic
+    extreme values (vol compression) get mapped to real extremes, artificially
+    amplifying tails (observed as calm kurtosis 8.85 vs real 5.49).
+
+    Both arrays: (N, T, D).  Mapping is computed over the flattened (N*T) axis.
     """
+    if rng is None:
+        rng = np.random.default_rng(seed=42)
     N, T, D = synthetic.shape
     syn = synthetic.copy()
     for i in range(D):
-        syn_flat  = syn[:, :, i].flatten()               # (N*T,)
-        real_flat = real[:, :, i].flatten()              # (N*T,)
-        real_sorted = np.sort(real_flat)
-        # Compute the rank of each synthetic value (as a quantile)
-        ranks = np.argsort(np.argsort(syn_flat))         # stable rank
-        quantiles = ranks / (len(syn_flat) - 1)
-        # Map quantiles to real distribution via linear interpolation
-        mapped = np.interp(quantiles, np.linspace(0, 1, len(real_sorted)), real_sorted)
+        syn_flat  = syn[:, :, i].flatten()
+        real_flat = real[:, :, i].flatten()
+        n_syn = len(syn_flat)
+        n_real = len(real_flat)
+        # Subsample real to syn size to avoid tail amplification from size mismatch
+        if n_real > n_syn:
+            idx = rng.choice(n_real, size=n_syn, replace=False)
+            real_for_map = np.sort(real_flat[idx])
+        else:
+            real_for_map = np.sort(real_flat)
+        n_map = len(real_for_map)
+        # Rank-based mapping: rank k in synthetic -> rank k in real
+        syn_ranks = np.argsort(np.argsort(syn_flat))
+        quantiles = syn_ranks / (n_syn - 1)
+        mapped = np.interp(quantiles, np.linspace(0, 1, n_map), real_for_map)
         syn[:, :, i] = mapped.reshape(N, T)
     return syn
 
@@ -199,10 +212,28 @@ def var_cvar(returns: np.ndarray, conf: float) -> tuple[float, float]:
     tail = returns[returns <= q]
     return float(-q), float(-np.mean(tail)) if len(tail) else float(-q)
 
-def kupiec(real_pnl, var_syn, conf):
-    hit = float((-real_pnl > var_syn).sum() / len(real_pnl))
-    return {"hit_rate": round(hit, 4), "nominal": 1.0 - conf,
-            "kupiec_pass": abs(hit - (1.0 - conf)) < 0.02}
+def kupiec(real_pnl: np.ndarray, var_syn: float, conf: float) -> dict:
+    """Kupiec (1995) LR test: LR ~ chi2(1) under correct coverage null."""
+    from scipy.stats import chi2 as _chi2
+    n = len(real_pnl)
+    n_exc = int((-real_pnl > var_syn).sum())
+    p_hat = n_exc / n
+    p_0   = 1.0 - conf
+    if n_exc == 0 or n_exc == n:
+        lr_stat, p_value = 0.0, 1.0
+    else:
+        lr_stat = 2.0 * (
+            n_exc * np.log(p_hat / p_0)
+            + (n - n_exc) * np.log((1.0 - p_hat) / (1.0 - p_0))
+        )
+        p_value = float(1.0 - _chi2.cdf(lr_stat, df=1))
+    return {
+        "hit_rate":    round(p_hat, 4),
+        "nominal":     p_0,
+        "kupiec_pass": p_value > 0.05,
+        "p_value":     round(p_value, 4),
+        "lr_stat":     round(lr_stat, 4),
+    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -220,9 +251,18 @@ def main() -> None:
         help="Rescaling mode: std (std-match only), quantile (full quantile map), "
              "cornish-fisher (moment matching via CF expansion). Default: std",
     )
+    parser.add_argument("--ckpt", type=str, default=None,
+                        help="Override checkpoint path (default: ddpm_conditional.pt)")
+    parser.add_argument("--aux-sf-loss", action="store_true",
+                        help="Load model with aux_sf_loss=True (needed for expF and later)")
+    parser.add_argument("--out-tag", type=str, default=None,
+                        help="Extra tag for output directory, e.g. expF_balanced")
     args = parser.parse_args()
 
-    OUT_DIR = OUT_DIR_STD if args.mode == "std" else (OUT_DIR_CF if args.mode == "cornish-fisher" else OUT_DIR_QM)
+    out_base = OUT_DIR_STD if args.mode == "std" else (OUT_DIR_CF if args.mode == "cornish-fisher" else OUT_DIR_QM)
+    if args.out_tag:
+        out_base = out_base.rstrip("/") + f"_{args.out_tag}"
+    OUT_DIR = out_base
     os.makedirs(OUT_DIR, exist_ok=True)
     print(f"Device: {DEVICE}  Mode: {args.mode}  Output: {OUT_DIR}")
     if DEVICE == "cuda":
@@ -235,14 +275,16 @@ def main() -> None:
     print(f"Real windows: {windows.shape}")
 
     # ── Load model
-    print(f"\nLoading checkpoint: {CKPT_PATH}")
+    ckpt_path = args.ckpt or CKPT_PATH
+    print(f"\nLoading checkpoint: {ckpt_path}")
     model = ImprovedDDPM(
         n_features=n_features, seq_len=60, cond_dim=5, T=1000,
         base_channels=128, channel_mults=(1, 2, 4),
         use_vpred=True, use_student_t_noise=True, student_t_df=5.0,
+        use_aux_sf_loss=args.aux_sf_loss,
         device=DEVICE,
     )
-    model.load(CKPT_PATH)
+    model.load(ckpt_path)
 
     regime_vecs = get_regime_conditioning_vectors()
 
