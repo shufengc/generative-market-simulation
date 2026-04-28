@@ -49,7 +49,7 @@ def _hill_estimator(x: np.ndarray, k: int | None = None) -> float:
     if n < 20:
         return np.nan
     if k is None:
-        k = max(10, int(np.sqrt(n)))
+        k = max(10, int(np.sqrt(n)))   # sqrt(n) is a standard bias-variance tradeoff for k
     k = min(k, n - 1)
     x_sorted = np.sort(x)[::-1]          # descending
     log_ratios = np.log(x_sorted[:k] / x_sorted[k])
@@ -82,17 +82,18 @@ def _hurst_rs(ts: np.ndarray, min_chunk: int = 20) -> float:
         for i in range(n_chunks):
             chunk = ts[i * chunk_size : (i + 1) * chunk_size]
             mean_c = chunk.mean()
-            devs = np.cumsum(chunk - mean_c)
-            R = devs.max() - devs.min()
+            devs = np.cumsum(chunk - mean_c)   # cumulative deviation from mean
+            R = devs.max() - devs.min()         # range of cumulative deviation
             S = chunk.std()
             if S > 0:
-                rs_vals.append(R / S)
+                rs_vals.append(R / S)           # rescaled range for this chunk
         if rs_vals:
             ns.append(np.log(chunk_size))
             rs_means.append(np.log(np.mean(rs_vals)))
 
     if len(ns) < 2:
         return np.nan
+    # Hurst exponent is the slope of log(R/S) vs log(n) in OLS
     H, _ = np.polyfit(ns, rs_means, 1)
     return float(H)
 

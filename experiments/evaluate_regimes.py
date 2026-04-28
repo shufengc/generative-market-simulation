@@ -46,10 +46,12 @@ def evaluate_regime(real_windows: np.ndarray, synthetic_windows: np.ndarray,
                     regime_name: str) -> dict:
     from scipy.stats import kurtosis, skew  # noqa: PLC0415
 
+    # cap at 1000 to keep evaluation runtime manageable
     n = min(len(real_windows), len(synthetic_windows), 1000)
     real_sub = real_windows[:n]
     syn_sub  = synthetic_windows[:n]
 
+    # flatten (N, T, D) -> (N, T*D) for distribution-level metrics
     mmd      = maximum_mean_discrepancy(real_sub.reshape(n, -1), syn_sub.reshape(n, -1))
     disc     = discriminative_score(real_sub, syn_sub)
     corr_dist = correlation_matrix_distance(real_sub, syn_sub)
@@ -60,6 +62,7 @@ def evaluate_regime(real_windows: np.ndarray, synthetic_windows: np.ndarray,
     sf_details = {r.get("name", f"sf{i}"): r.get("pass", False)
                   for i, r in enumerate(sf_list)}
 
+    # per-asset vol: mean of per-asset std across all windows and time steps
     syn_flat  = syn_sub.reshape(-1, syn_sub.shape[-1])
     real_flat = real_sub.reshape(-1, real_sub.shape[-1])
     syn_vol   = float(np.std(syn_flat, axis=0).mean())
@@ -114,6 +117,7 @@ def print_summary(all_results: list[dict]) -> None:
         c_kurt = by_name["crisis"]["syn_excess_kurtosis"]
         k_kurt = by_name["calm"]["syn_excess_kurtosis"]
         print("\nConditioning sanity checks:")
+        # Primary L3 success criterion: crisis should produce higher vol than calm
         print(f"  Crisis vol {c_vol:.4f} > Calm vol {k_vol:.4f}  "
               + ("PASS" if c_vol > k_vol else "FAIL (crisis should have higher vol)"))
         print(f"  Crisis kurtosis {c_kurt:.2f} > Calm kurtosis {k_kurt:.2f}  "

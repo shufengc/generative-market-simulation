@@ -159,7 +159,8 @@ def train(windows: np.ndarray, window_cond: np.ndarray,
     n_params = sum(p.numel() for p in model.net.parameters())
     print(f"  Parameters: {n_params:,}")
 
-    # Compute inverse-frequency sample weights when --regime-weight is set
+    # Compute inverse-frequency sample weights when --regime-weight is set.
+    # This rebalances the training batch distribution without duplicating data.
     sample_weights = None
     if CFG["use_regime_weight"] and window_regimes is not None:
         unique_r, counts_r = np.unique(window_regimes, return_counts=True)
@@ -205,7 +206,7 @@ def evaluate_conditional(model: ImprovedDDPM, windows: np.ndarray,
     results = {}
     n_gen = 1000
 
-    # Use unoversampled windows for evaluation (real distribution unchanged)
+    # Use unoversampled windows for evaluation so real distribution reflects true data
     windows_npy = np.load(os.path.join(CFG["data_dir"], "windows.npy"))
     reg_npy     = np.load(os.path.join(CFG["data_dir"], "window_regimes.npy"))
 
