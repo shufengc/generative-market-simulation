@@ -87,6 +87,7 @@ def _build_ddpm_kwargs_from_checkpoint(ckpt_path: str, defaults: dict) -> dict:
     kwargs["cond_dim"] = cfg.get("cond_dim", kwargs["cond_dim"])
     kwargs["cfg_drop_prob"] = cfg.get("cfg_drop_prob", kwargs.get("cfg_drop_prob", 0.1))
 
+    # Infer base_channels from the first conv layer's output channels
     init_conv_w = net_state.get("init_conv.weight")
     if init_conv_w is not None and init_conv_w.ndim == 3:
         base_channels = int(init_conv_w.shape[0])
@@ -101,6 +102,7 @@ def _build_ddpm_kwargs_from_checkpoint(ckpt_path: str, defaults: dict) -> dict:
                 down_channels[idx] = int(value.shape[0])
 
         if down_channels:
+            # Recover channel_mults by dividing each down block's channel count by base_channels
             channel_mults = tuple(
                 max(1, down_channels[idx] // max(base_channels, 1))
                 for idx in sorted(down_channels.keys())
@@ -330,11 +332,12 @@ async def generate(req: GenerateRequest):
         raise HTTPException(404, f"Model '{req.model}' not loaded. Available: {list(LOADED_MODELS.keys())}")
 
     model = LOADED_MODELS[req.model]
-    n_paths = min(req.n_paths, 500)
+    n_paths = min(req.n_paths, 500)  # cap to keep response time reasonable
 
     cond = None
     is_diffusion_model = req.model in {"ddpm", "ddpm_improved"}
     if is_diffusion_model and getattr(model, "cond_dim", 0) > 0:
+        # Only pass conditioning vectors for models trained with regime conditioning
         regime_vectors = get_regime_conditioning_vectors()
         if req.regime in regime_vectors:
             cond = regime_vectors[req.regime]
@@ -354,12 +357,13 @@ async def generate(req: GenerateRequest):
     else:
         paths_raw = synthetic
 
-    # De-normalize if scaler available
+    # De-normalize if scaler available: reverse the z-score normalization applied during preprocessing
     if SCALER and "mean" in SCALER and asset_idx < len(SCALER["mean"]):
         paths_denorm = paths_raw * SCALER["std"][asset_idx] + SCALER["mean"][asset_idx]
     else:
         paths_denorm = paths_raw
 
+    # Convert log-returns to price paths: P(t) = exp(cumsum(r)) * 100 (start at price=100)
     prices = np.exp(np.cumsum(paths_denorm, axis=1)) * 100
     terminal = prices[:, -1].tolist()
 

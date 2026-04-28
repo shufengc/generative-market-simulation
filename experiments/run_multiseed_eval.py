@@ -47,12 +47,13 @@ CONFIDENCE_LEVELS = [0.95, 0.99]
 
 def kupiec_lr(real_pnl: np.ndarray, var_syn: float, conf: float) -> dict:
     n = len(real_pnl)
-    n_exc = int((-real_pnl > var_syn).sum())
-    p_hat = n_exc / n
-    p_0   = 1.0 - conf
+    n_exc = int((-real_pnl > var_syn).sum())   # count exceedances (real losses exceeding VaR)
+    p_hat = n_exc / n                           # observed hit rate
+    p_0   = 1.0 - conf                          # expected hit rate under correct coverage
     if n_exc == 0 or n_exc == n:
         lr_stat, p_value = 0.0, 1.0
     else:
+        # LR statistic compares observed vs nominal binomial likelihoods; follows chi2(1) under H0
         lr_stat = 2.0 * (
             n_exc * np.log(p_hat / p_0)
             + (n - n_exc) * np.log((1.0 - p_hat) / (1.0 - p_0))
@@ -114,12 +115,13 @@ def eval_seed(model: ImprovedDDPM, windows: np.ndarray, window_regimes: np.ndarr
         }
 
     # VaR backtest (unconditional)
+    # guidance_scale=1.0 means no regime conditioning — same as the L4 backtest baseline
     syn_uncond = model.generate(
         n_samples=5000, use_ddim=True, ddim_steps=50,
         guidance_scale=1.0, ddim_eta=0.0, cond=None,
     )
-    weights = np.ones(windows.shape[-1]) / windows.shape[-1]
-    real_pnl = (windows * weights[None, None, :]).sum(-1).sum(-1)
+    weights = np.ones(windows.shape[-1]) / windows.shape[-1]  # equal-weight portfolio
+    real_pnl = (windows * weights[None, None, :]).sum(-1).sum(-1)   # sum over time and assets
     syn_pnl  = (syn_uncond * weights[None, None, :]).sum(-1).sum(-1)
     var_results = {}
     for conf in CONFIDENCE_LEVELS:
@@ -170,7 +172,7 @@ def main() -> None:
             print(f"  VaR@{ck}: err={cv['err_pct']:.1f}%  hit={kp['hit_rate']:.4f}  "
                   f"p={kp['p_value']:.4f}  {'PASS' if kp['kupiec_pass'] else 'FAIL'}")
 
-    # Aggregate across seeds
+    # Aggregate across seeds: report mean ± std to check result stability
     def _mean_std(key_path: list, is_pass: bool = False):
         vals = []
         for seed_res in all_results.values():
