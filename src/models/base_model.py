@@ -14,7 +14,6 @@ import torch
 
 
 class BaseGenerativeModel(ABC):
-    """Base class that all generative models inherit from."""
 
     def __init__(self, name: str, device: str = "cpu"):
         self.name = name
@@ -53,14 +52,10 @@ class BaseGenerativeModel(ABC):
         ...
 
     @abstractmethod
-    def save(self, path: str) -> None:
-        """Save model checkpoint."""
-        ...
+    def save(self, path: str) -> None: ...
 
     @abstractmethod
-    def load(self, path: str) -> None:
-        """Load model checkpoint."""
-        ...
+    def load(self, path: str) -> None: ...
 
     def evaluate(self, real_data: np.ndarray, n_samples: int = 1000) -> dict:
         """Generate synthetic data and run stylized facts tests."""

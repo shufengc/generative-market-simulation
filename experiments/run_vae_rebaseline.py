@@ -127,7 +127,7 @@ def main():
     epochs = 20 if args.quick else (args.epochs or 400)
     n_gen = 200 if args.quick else args.n_gen
 
-    # Load data
+
     windows = np.load(os.path.join(DATA_DIR, "windows.npy"))
     real_windows = windows.copy()
     print(f"Loaded windows: {windows.shape}")
@@ -151,7 +151,7 @@ def main():
         )
         all_results.append(result)
 
-    # Save raw results
+
     out_json = os.path.join(RESULTS_DIR, "vae_results.json")
     with open(out_json, "w") as f:
         json.dump(all_results, f, indent=2)
@@ -173,7 +173,7 @@ def main():
     print(f"  Wasserstein:  {np.mean(w1_vals):.4f} ± {np.std(w1_vals):.4f}")
     print(f"  CorrDist:     {np.mean(corr_vals):.4f} ± {np.std(corr_vals):.4f}")
 
-    # Save summary CSV
+
     out_csv = os.path.join(RESULTS_DIR, "summary.csv")
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[

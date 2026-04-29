@@ -38,7 +38,6 @@ def set_seed(seed: int = SEED):
 
 
 def step_download(data_dir: str, fred_key: str | None = None):
-    """Step 1: Download market data."""
     print("\n" + "=" * 60)
     print("STEP 1: Downloading market data")
     print("=" * 60)
@@ -50,7 +49,6 @@ def step_download(data_dir: str, fred_key: str | None = None):
 
 
 def step_preprocess(data_dir: str, window_size: int = 60, stride: int = 1):
-    """Step 2: Preprocess data into returns and windows."""
     print("\n" + "=" * 60)
     print("STEP 2: Preprocessing data")
     print("=" * 60)
@@ -73,7 +71,6 @@ def step_preprocess(data_dir: str, window_size: int = 60, stride: int = 1):
 
 
 def step_regime_labels(dataset: dict, data_dir: str):
-    """Step 3: Compute regime labels and conditioning vectors."""
     print("\n" + "=" * 60)
     print("STEP 3: Computing regime labels")
     print("=" * 60)
@@ -207,7 +204,6 @@ def step_train(data_dir: str, models_to_train: list[str],
 
 
 def step_evaluate(trained_models: dict, data_dir: str, n_samples: int = 500):
-    """Step 5: Generate synthetic data and run evaluations."""
     print("\n" + "=" * 60)
     print("STEP 5: Evaluation")
     print("=" * 60)
@@ -241,7 +237,6 @@ def step_evaluate(trained_models: dict, data_dir: str, n_samples: int = 500):
 
 
 def step_dashboard(results: dict, data_dir: str, training_losses: dict):
-    """Step 6: Generate comparison dashboard."""
     print("\n" + "=" * 60)
     print("STEP 6: Generating dashboard")
     print("=" * 60)

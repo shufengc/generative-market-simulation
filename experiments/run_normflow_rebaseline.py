@@ -115,7 +115,7 @@ def run_single(model_name: str, config: dict, windows: np.ndarray,
     gen_time = time.time() - t1
     print(f"  Generation took {gen_time:.1f}s")
 
-    # Check for NaN/Inf in generated data
+
     n_bad = np.isnan(synthetic).sum() + np.isinf(synthetic).sum()
     if n_bad > 0:
         print(f"  WARNING: {n_bad} NaN/Inf values in generated data")
@@ -190,7 +190,7 @@ def main():
     print(f"Seeds: {args.seeds}")
     print(f"Epochs: {args.epochs}")
 
-    # Load stride=1 data
+
     windows_path = os.path.join(args.data_dir, "windows.npy")
     if not os.path.exists(windows_path):
         print(f"ERROR: Data not found at {windows_path}")
@@ -275,7 +275,7 @@ def main():
               f"{np.mean(w1s):.4f}+/-{np.std(w1s):.4f}  "
               f"{np.mean(cds):.4f}+/-{np.std(cds):.4f}")
 
-    # Save summary CSV
+
     summary_path = os.path.join(args.out_dir, "summary.csv")
     with open(summary_path, "w") as f:
         f.write("model,seed,n_params,epochs,sf_passed,mmd,wasserstein_1d,"

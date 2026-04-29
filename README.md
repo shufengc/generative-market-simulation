@@ -1,6 +1,6 @@
 # Generative Market Simulation
 
-Synthetic financial time series generation via deep generative models, validated against the six stylized facts of financial returns.
+Synthetic multi-asset financial time series via deep generative models.
 
 > EECS 4904 &mdash; Spring 2026 Final Project
 
@@ -8,19 +8,17 @@ Synthetic financial time series generation via deep generative models, validated
 
 ## Motivation
 
-Risk management teams need thousands of realistic market scenarios to stress-test portfolios. Simply replaying history produces only a single realized path. Classical models like GARCH generate conditionally Gaussian returns that fail to capture the heavy tails, volatility clustering, and leverage effects universally observed in real markets.
+Risk managers need thousands of realistic market scenarios to stress-test portfolios — replaying a single historical path is not enough. We train multiple deep generative models to produce synthetic 60-day return windows that reproduce the statistical properties of real markets, and compare them under a unified validation framework.
 
-This project trains multiple deep generative models to produce synthetic multi-asset return series that faithfully reproduce the statistical properties of real financial data, and compares them under a rigorous validation framework.
+## Stylized Facts
 
-## Six Stylized Facts
-
-Every generated dataset is validated against six well-documented empirical regularities:
+Generated data is validated against six empirical properties of real financial returns (Cont, 2001):
 
 | # | Property | Description |
 |---|----------|-------------|
 | 1 | Fat tails | Return distributions are heavier-tailed than Gaussian |
 | 2 | Volatility clustering | Large moves tend to follow large moves |
-| 3 | Leverage effect | Negative returns increase subsequent volatility more than positive returns |
+| 3 | Leverage effect | Negative returns amplify future volatility more than positive returns |
 | 4 | Slow autocorrelation decay | Absolute returns show long-memory autocorrelation |
 | 5 | Time-varying cross-asset correlations | Correlations between assets change over time |
 | 6 | No autocorrelation in raw returns | Raw returns are approximately uncorrelated |
@@ -29,7 +27,7 @@ Every generated dataset is validated against six well-documented empirical regul
 
 | Model | Type | Key Idea |
 |-------|------|----------|
-| **DDPM** | Diffusion | 1-D U-Net denoiser with v-prediction, DDIM sampling, EMA, and classifier-free guidance |
+| **DDPM** | Diffusion | 1-D U-Net with v-prediction, Student-t forward process, DDIM sampling, classifier-free guidance |
 | **TimeGAN** | GAN | Embedding + supervisor + adversarial training for temporal latent dynamics |
 | **VAE** | Variational | GRU encoder-decoder with KL annealing |
 | **GARCH** | Statistical | Per-asset GARCH(1,1) with correlated Student-t innovations |
@@ -41,43 +39,20 @@ Every generated dataset is validated against six well-documented empirical regul
   <img src="presentation_assets/pipeline_overview.png" width="800" alt="Project pipeline overview">
 </p>
 
-## Four-Layer Framework for Useful Synthetic Financial Data
-
-This project frames "useful" synthetic data as four progressively harder layers:
+## Layers
 
 | Layer | Name | Criterion | Status |
 |-------|------|-----------|--------|
-| **L1** | Diversity | Thousands of novel multi-asset paths | **Delivered** |
-| **L2** | Statistical Fidelity | SF=5/6, MMD=0.006 — best across all 5 models | **Delivered** |
-| **L3** | Conditional Control | Regime-specific generation (crisis / calm / normal) | **Implemented** — conditioning works, calibration ongoing |
-| **L4** | Downstream Utility | VaR/CVaR coverage, strategy backtest fidelity | **Measured** — Kupiec FAIL; root cause identified (vol compression) |
+| **L1** | Diversity | Thousands of novel multi-asset paths | Delivered |
+| **L2** | Statistical Fidelity | SF=5/6, MMD=0.006 — best across all 5 models | Delivered |
+| **L3** | Conditional Control | Regime-specific generation (crisis / calm / normal) on demand | Implemented |
+| **L4** | Downstream Utility | VaR/CVaR Kupiec coverage test | Partial — 95% PASS, 99% open |
 
-A methodological contribution emerged from the calibration study: running the same SF evaluation on real data yields only 3/6, establishing 5/6 as the empirical ceiling. See [Evaluation Notes](#evaluation-notes) and `docs/l3-l4-experiment-report.md` for the full L3/L4 experiment writeup.
+A calibration study finding: running the same SF evaluation on the real training data yields only 3/6. Our model at 5/6 is more statistically compliant than the data it trained on — establishing 5/6 as the empirical ceiling.
 
-## Model Overview and Cross-Model Comparison
+## Cross-Model Comparison
 
-### Model Overview
-
-Models are presented in the project order used by the demo:
-
-1. **DDPM**  
-   Diffusion-based generator with 1-D denoising networks and classifier-free conditioning. This is the main research line, with both baseline and improved variants (v-prediction + Student-t forward process).
-
-2. **TimeGAN**  
-   Adversarial sequence model with embedding/supervisor/generator-discriminator stages. It serves as the deep GAN baseline for temporal realism.
-
-3. **VAE**  
-   GRU encoder-decoder variational model with KL annealing. It is the lightweight latent-variable baseline with stable training behavior.
-
-4. **GARCH**  
-   Classical statistical baseline using per-asset GARCH(1,1) dynamics with correlated innovations. It provides a non-deep reference point.
-
-5. **RealNVP**  
-   Flow-based model (normalizing flow) with affine coupling transformations. It is the strongest distribution-matching baseline in this project.
-
-### Cross-Model Comparison Summary
-
-Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005-2026 daily returns, 60-day overlapping windows with stride=1 (~5,300 windows). All models evaluated under a unified framework (`stylized_facts.run_all_tests()`), 3 seeds (42, 123, 456), 400 epochs.
+Training: 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index), 2005–2026 daily returns, 60-day windows stride=1 (~5,300 windows). All models: unified framework, 3 seeds (42, 123, 456), 400 epochs.
 
 | Model | Stylized Facts | MMD | Wasserstein-1 | Disc. Score | Corr. Dist. |
 |-------|:--------------:|:---:|:-------------:|:-----------:|:-----------:|
@@ -87,152 +62,72 @@ Training on 16 assets (S&P 500 sector ETFs, Treasuries, gold, oil, dollar index)
 | **VAE (Improved)** | 1 / 6 | 0.020 | 0.157 | 0.75 | 4.52 |
 | **GARCH (Baseline)** | 1.3 / 6 | 0.042 | 3.56 | 1.00 | 2.97 |
 
-*All results: 3-seed average (42, 123, 456). DDPM and NormFlow: 400 epochs. See `experiments/results/final_comparison/comparison_table.csv` for full numbers.*
+*3-seed average. See `experiments/results/final_comparison/comparison_table.csv` for full numbers.*
 
-- DDPM (v-pred + Student-t) achieves the best MMD and correlation distance across all models.
-- NormFlow has the best discriminative score (0.73), matching DDPM on stylized facts coverage.
-- SF6 (No Raw Autocorrelation) is not passed by any model — see Evaluation Notes below.
-- Full per-model ANALYSIS files: `experiments/results/{model}_rebaseline/ANALYSIS.md`.
+- DDPM achieves the best MMD and correlation distance.
+- NormFlow has the best discriminative score (0.73), matching DDPM on SF.
+- SF6 (no raw autocorrelation) is not passed by any model — see Evaluation Notes below.
 
 ### Evaluation Notes
 
-- **Unified framework**: all models run through the same `stylized_facts.run_all_tests()` function with identical thresholds, stride=1, 60-day windows, 3 seeds.
-- **Global normalization** (z-scoring using full-sample mean/std) is intentional for a generative benchmark — the goal is distributional fidelity over the full sample, not out-of-sample forecasting.
-- **SF=5/6 is the empirical ceiling**: running the same evaluation on the actual training data (S&P 16 assets, 2000-2024) yields only 3/6 — real data fails SF1 (Hill α=7.83 > threshold 5), SF4 (Hurst=1.01, non-stationary), and SF6 (LB statistic=5927). Our synthetic data at 5/6 is *more* stylized-fact-compliant than the source data.
-- **SF6 (Ljung-Box)** requires all 20 lag-wise p-values > 0.05 simultaneously. Under iid white noise, the probability of this is ≈ 0.95²⁰ ≈ 36% — meaning even a correct model fails ~64% of the time by chance. Treat SF6 as a qualitative improvement direction, not a binary pass/fail gate.
+- **Unified framework**: all models use the same `stylized_facts.run_all_tests()`, identical thresholds, stride=1, 60-day windows, 3 seeds.
+- **Global normalization** (z-scoring over the full sample) is intentional for a generative benchmark — distributional fidelity over the whole sample, not out-of-sample forecasting.
+- **SF=5/6 is the empirical ceiling**: real training data (S&P 16 assets, 2005–2026) scores only 3/6 — fails SF1 (Hill α=7.83), SF4 (Hurst=1.01, non-stationary), and SF6 (LB statistic driven by sample size). Our synthetic data at 5/6 is more stylized-fact-compliant than the source data.
+- **SF6 (Ljung-Box)** requires all 20 lag-wise p-values > 0.05 simultaneously. Under i.i.d. white noise, the probability of this is ≈ 36%. Treat SF6 as a direction, not a binary gate.
 
-## Results Figures
-
-### Cross-Model Analysis
-
-<p align="center">
-  <img src="results/cross_model/radar_chart.png" width="700" alt="Radar chart comparing models across metrics">
-</p>
-
-<p align="center">
-  <img src="results/comparison_table.png" width="700" alt="Overall comparison table across models and metrics">
-</p>
-
-<p align="center">
-  <img src="results/stylized_facts_heatmap.png" width="700" alt="Stylized facts heatmap for model pass/fail behavior">
-</p>
-
-### Per-Regime Performance
-
-<p align="center">
-  <img src="results/cross_model/regime_sf_passed.png" width="700" alt="Stylized facts by regime">
-</p>
-
-<p align="center">
-  <img src="results/cross_model/regime_mmd.png" width="700" alt="MMD by regime">
-</p>
-
-### Distribution and Correlation Diagnostics
-
-<p align="center">
-  <img src="results/distributions.png" width="700" alt="Return distribution comparison between real and synthetic samples">
-</p>
-
-<p align="center">
-  <img src="results/correlation_matrices.png" width="700" alt="Correlation matrix comparison for cross-asset structure">
-</p>
-
-<p align="center">
-  <img src="results/acf_absolute.png" width="700" alt="Autocorrelation of absolute returns">
-</p>
-
-## DDPM Ablation Results
-
-Training on 16 assets, 60-day overlapping windows with stride=1 (~5,300 windows), 400 epochs, 3 seeds (42, 123, 456). Evaluated with the unified stylized facts framework.
+## DDPM Ablation
 
 | Config | Stylized Facts | MMD | Disc. Score |
 |--------|:--------------:|:---:|:-----------:|
 | **DDPM Phase 6 (v-pred + Student-t)** | **5.0 / 6** | **0.006** | 0.85 |
-| DDPM + Min-SNR + warmup (Phase 7, Yuxia) | 5.0 / 6 | 0.031 | 0.92 |
-| DDPM + Min-SNR + decorr_reg (Phase 7, Yixuan) | 5.0 / 6 | 0.015 | 0.87 |
-| DDPM + patch stride=2 (Phase 7, Yizheng) | 4.0 / 6 | 0.021 | 0.72 |
+| DDPM + Min-SNR + warmup (Phase 7) | 5.0 / 6 | 0.031 | 0.92 |
+| DDPM + Min-SNR + decorr_reg (Phase 7) | 5.0 / 6 | 0.015 | 0.87 |
+| DDPM + patch stride=2 (Phase 7) | 4.0 / 6 | 0.021 | 0.72 |
 
-See `experiments/results/final_comparison/ddpm_ablation_table.csv` for full numbers.
+Key innovations: **v-prediction** (Salimans & Ho, 2022) improved SF from 1.7/6 to 5.0/6. Adding **Student-t forward noise** (df=5) reduced MMD by 6× with no additional parameters.
 
-The key algorithmic innovations are **v-prediction** (Salimans & Ho, 2022) and a **Student-t forward process**. V-prediction replaces the standard noise-prediction target with a velocity target, improving stylized facts from 1.7/6 to 5.0/6. Adding Student-t noise (df=5) preserves heavy tails through the diffusion process, reducing MMD by 6x over v-prediction alone (0.006 vs 0.037) with no additional parameters.
+Key discovery (Phase 3): sigmoid noise schedule suppresses fat tails when combined with v-prediction (SF drops from 5.0 to 2.7). Cosine schedule is the correct pairing.
 
-**Key discovery (Phase 3)**: The sigmoid noise schedule *suppresses* volatility clustering and fat tails when combined with v-prediction (dropping SF from 5.0 to 2.7). The cosine schedule is the correct pairing for v-prediction.
-
-Full experiment results across 7 phases of ablation are in `experiments/results/`. Phase 6 results are in `experiments/results/phase6_rebaseline/ANALYSIS.md`. Phase 7 decorr_reg analysis (including the evaluation framework calibration finding) is in `experiments/results/phase7_decorr_reg/ANALYSIS.md`.
-
-### DDPM Ablation Study
-
-Multiple DDPM variants were tested across 7 experiment phases. See `experiments/results/phase3_fair_comparison/ANALYSIS.md` for the controlled comparison, `experiments/results/phase4_low_compute/ANALYSIS.md` for the parameter-fair test, and `experiments/results/phase6_rebaseline/ANALYSIS.md` for current results under the unified evaluation framework.
+## Results Figures
 
 <p align="center">
-  <img src="experiments/results/fig_radar_chart.png" width="700" alt="Radar chart of normalized metrics across DDPM variants">
+  <img src="results/cross_model/radar_chart.png" width="700" alt="Radar chart comparing models">
 </p>
 
 <p align="center">
-  <img src="experiments/results/fig_stylized_facts_heatmap.png" width="700" alt="Stylized facts pass/fail across DDPM variants">
+  <img src="results/stylized_facts_heatmap.png" width="700" alt="Stylized facts heatmap">
 </p>
-
-### Return Distribution Comparison
 
 <p align="center">
-  <img src="experiments/results/fig_distributions_h2h.png" width="700" alt="Return distributions: real vs DDPM vs NormFlow">
+  <img src="experiments/results/fig_distributions_h2h.png" width="700" alt="Return distributions: real vs synthetic">
 </p>
-
-### QQ-Plot Comparison
-
-<p align="center">
-  <img src="experiments/results/fig_qq_h2h.png" width="700" alt="QQ-plots: real vs synthetic">
-</p>
-
-### Autocorrelation of |Returns|
 
 <p align="center">
   <img src="experiments/results/fig_acf_h2h.png" width="700" alt="ACF of absolute returns">
 </p>
 
-### Synthetic Price Paths
-
-<p align="center">
-  <img src="experiments/results/fig_paths_ddpm_final.png" width="700" alt="DDPM synthetic paths">
-</p>
-
-### Correlation Matrix: Real vs Synthetic
-
-<p align="center">
-  <img src="experiments/results/fig_corr_ddpm.png" width="700" alt="Correlation matrices: real vs DDPM">
-</p>
-
-### Training Loss Curves
-
-<p align="center">
-  <img src="experiments/results/fig_training_losses.png" width="600" alt="Training loss curves">
-</p>
-
 ## Data Sources
 
-- **Yahoo Finance** via `yfinance`: daily prices for 18 tickers (sector ETFs, Treasuries, commodities, VIX) spanning 2005--2026
+- **Yahoo Finance** via `yfinance`: daily prices for 18 tickers (sector ETFs, Treasuries, commodities, VIX), 2005–2026
 - **FRED API** via `fredapi`: yield curve slope, credit spreads, fed funds rate for macro regime conditioning
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
 
-# Run the full pipeline (download, preprocess, train, evaluate, dashboard)
+# Full pipeline (download, preprocess, train, evaluate)
 PYTHONPATH=. python3 src/run_pipeline.py
 
-# Quick test mode (20 epochs, ~5 min)
+# Quick test (20 epochs, ~5 min)
 PYTHONPATH=. python3 src/run_pipeline.py --quick
 
-# Launch the interactive demo
+# Interactive demo
 PYTHONPATH=. python3 -m src.demo.app
 # Open http://localhost:8000
 ```
 
 ### Conditional Generation (L3)
-
-The DDPM supports regime-conditioned generation (crisis, calm, normal) via classifier-free guidance. A trained conditional checkpoint is at `checkpoints/ddpm_conditional.pt`.
 
 ```python
 from src.models.ddpm_improved import ImprovedDDPM
@@ -251,10 +146,8 @@ crisis_paths = model.generate(1000, use_ddim=True, ddim_steps=50,
                                guidance_scale=2.0, cond=regime_vecs["crisis"])
 ```
 
-To run the full L3/L4 experiment:
-
 ```bash
-# Train conditional DDPM (~11 min on RTX 5090)
+# Train conditional DDPM
 python3 experiments/run_conditional_ddpm.py --skip-eval
 
 # Evaluate regime-stratified generation
@@ -265,71 +158,27 @@ python3 experiments/evaluate_regimes.py
 python3 experiments/var_backtest.py --n-paths 5000
 ```
 
-**L3 key results** (400 epochs, RTX 5090, 8.99M params):
+**L3 results** (expG_moderate, guidance_scale=1.0, 3-seed avg):
 
 | Regime | n_real | SF | MMD | Disc | Syn Vol | Real Vol |
 |--------|--------|:--:|:---:|:----:|--------:|--------:|
-| Crisis | 724 | 4/6 | 0.018 | 0.729 | 1.199 | 1.684 |
-| Calm | 2,112 | 3/6 | 0.274 | 1.000 | 0.305 | 0.644 |
-| Normal | 2,457 | 5/6 | 0.018 | 0.672 | 0.666 | 0.947 |
+| Crisis | 724 | 4/6 | 0.018 | 0.814 | 1.257 | 1.684 |
+| Calm | 2,112 | 3/6 | 0.374 | 1.000 | 0.335 | 0.644 |
+| Normal | 2,457 | 4/6 | 0.027 | 0.782 | 0.561 | 0.947 |
 
-Conditioning sanity checks both pass: crisis vol (1.20) > normal vol (0.67) > calm vol (0.30). The calm regime is the hardest — Disc=1.0 indicates the discriminator can perfectly distinguish real from synthetic calm-period data.
+Conditioning sanity: crisis vol (1.26) > normal vol (0.56) > calm vol (0.34). Direction is correct across all three regimes.
 
-**L4 key result**: Kupiec coverage test fails at both 95% and 99% (real 95%-VaR is 5.59; synthetic estimates 1.86, a 67% under-estimate). Root cause: the diffusion model systematically compresses volatility by 30–53%. PnL rank-correlation is 0.973, so relative ordering is preserved — only the absolute scale is miscalibrated. See `docs/l3-l4-experiment-report.md` for full analysis and remediation roadmap.
-
-## Project Structure
-
-```
-├── src/
-│   ├── data/
-│   │   ├── download.py          # Yahoo Finance + FRED data acquisition
-│   │   ├── preprocess.py        # Log returns, normalization, windowing
-│   │   └── regime_labels.py     # Crisis/calm/normal regime classification
-│   ├── models/
-│   │   ├── base_model.py        # Abstract interface for all models
-│   │   ├── ddpm.py              # DDPM baseline
-│   │   ├── ddpm_improved.py     # DDPM with v-prediction, ablation-ready improvements
-│   │   ├── garch.py             # GARCH(1,1) with correlated innovations
-│   │   ├── vae.py               # GRU VAE with KL annealing
-│   │   ├── gan.py               # TimeGAN with gradient penalty
-│   │   └── normalizing_flow.py  # RealNVP with batch normalization
-│   ├── evaluation/
-│   │   ├── stylized_facts.py    # Six statistical tests
-│   │   ├── metrics.py           # MMD, Wasserstein, discriminative score
-│   │   └── visualization.py     # Comparison dashboards and plots
-│   ├── demo/
-│   │   ├── app.py               # FastAPI backend
-│   │   └── index.html           # Interactive Chart.js frontend
-│   ├── utils/
-│   │   └── config.py            # Central configuration
-│   └── run_pipeline.py          # End-to-end orchestration
-├── experiments/
-│   ├── run_ddpm_ablation.py          # Ablation study: multi-phase, 20+ variants x 3 seeds
-│   ├── report_ddpm.py                # 3-level evaluation report generator
-│   ├── run_conditional_ddpm.py       # L3: conditional DDPM training + regime generation
-│   ├── evaluate_regimes.py           # L3: regime-stratified evaluation with SF/MMD/Disc
-│   ├── var_backtest.py               # L4: VaR/CVaR Kupiec test + Sharpe distribution
-│   └── results/                      # Figures, tables, raw JSON results
-│       ├── conditional_ddpm/         # L3 regime-stratified results + plots
-│       └── var_backtest/             # L4 VaR backtest results + plots
-├── docs/
-│   ├── l3-l4-experiment-report.md   # Full L3/L4 experiment writeup with roadmap
-│   ├── gamma-prompts-final.md        # Gamma presentation slide prompts
-│   └── branch-status-report.md      # Branch audit and divergence report
-├── notebooks/
-│   └── demo.ipynb               # Jupyter demo notebook
-└── requirements.txt
-```
+**L4 result** (expF_balanced + flat quantile mapping): 95% Kupiec PASS (p=0.069), VaR error 6.3%. PnL rank correlation = 0.988. The 99% level remains open — the model generates too few crisis-magnitude scenarios unconditionally for the 1% tail.
 
 ## Team
 
 | Member | Role |
 |--------|------|
-| Shufeng Chen | DDPM Baseline & Improved (v-prediction, Student-t), Ablation Study, Integration, Demo |
-| Yixuan Ye | TimeGAN, Evaluation Framework (Stylized Facts), Data Pipeline |
-| Yizheng Lin | VAE (Improved + Original), Data Pipeline, FRED Integration |
-| Kevin Sun | GARCH Baseline, Visualization |
-| Yuxia Meng | Normalizing Flow (RealNVP), Cross-Model Analysis, DDPM Training Enhancements |
+| Shufeng Chen | DDPM Baseline and Improved (v-prediction, Student-t); 7-phase ablation; L3 Conditional DDPM; L4 VaR/CVaR Backtest; Cross-Model Pipeline |
+| Yixuan Ye | TimeGAN; Evaluation Framework (Stylized Facts); Data Pipeline |
+| Yizheng Lin | VAE (Improved + Original); Data Pipeline; FRED Integration |
+| Kevin Sun | GARCH Baseline; Visualization Utilities; Demo Interface Testing |
+| Yuxia Meng | Normalizing Flow (RealNVP); Cross-Model Analysis; DDPM Training Enhancements (Min-SNR, warmup LR); Multi-Seed Validation |
 
 ## References
 

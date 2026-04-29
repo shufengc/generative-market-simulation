@@ -239,7 +239,6 @@ class DDPMModel(BaseGenerativeModel):
         self.cond_dim = cond_dim
         self.cfg_drop_prob = cfg_drop_prob
 
-        # Build noise schedule
         if schedule == "cosine":
             betas = cosine_beta_schedule(T)
         else:
@@ -265,7 +264,6 @@ class DDPMModel(BaseGenerativeModel):
             padded_len += 1
         self.padded_len = padded_len
 
-        # Build network
         self.net = UNet1D(
             in_channels=n_features,
             base_channels=base_channels,

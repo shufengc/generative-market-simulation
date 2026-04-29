@@ -102,17 +102,13 @@ def quantile_map(synthetic: np.ndarray, real: np.ndarray,
         real_flat = real[:, :, i].flatten()
         n_syn = len(syn_flat)
         n_real = len(real_flat)
-        # Subsample real to syn size to avoid tail amplification from size mismatch.
-        # Bug fixed in Iteration 2: previously we used all n_real points regardless of
-        # synthetic count, which over-inflated tails when n_real >> n_syn.
+        # Subsample real to syn size to avoid tail amplification from size mismatch
         if n_real > n_syn:
             idx = rng.choice(n_real, size=n_syn, replace=False)
             real_for_map = np.sort(real_flat[idx])
         else:
             real_for_map = np.sort(real_flat)
         n_map = len(real_for_map)
-        # Rank-based mapping: find each synthetic point's percentile rank,
-        # then look up the real value at that same percentile
         syn_ranks = np.argsort(np.argsort(syn_flat))
         quantiles = syn_ranks / (n_syn - 1)
         mapped = np.interp(quantiles, np.linspace(0, 1, n_map), real_for_map)
@@ -135,16 +131,13 @@ def cornish_fisher_match(synthetic: np.ndarray, real: np.ndarray) -> np.ndarray:
     for i in range(D):
         syn_flat  = syn[:, :, i].flatten()
         real_flat = real[:, :, i].flatten()
-        # Extract target moments from real data for this asset
         r_mean = float(real_flat.mean())
         r_std  = float(real_flat.std()) + 1e-8
         r_skew = float(sp_skew(real_flat))
         r_kurt = float(sp_kurt(real_flat, fisher=True))  # excess kurtosis
-        # Standardise synthetic to zero-mean unit-variance before applying CF expansion
         s_mean = float(syn_flat.mean())
         s_std  = float(syn_flat.std()) + 1e-8
         z = (syn_flat - s_mean) / s_std
-        # Apply Cornish-Fisher expansion to inject target skew and kurtosis
         s, k = r_skew, r_kurt
         z_cf = (z
                 + (s / 6) * (z**2 - 1)
