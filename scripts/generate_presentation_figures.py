@@ -46,7 +46,7 @@ def make_four_layers():
     for (yb, h, color, tag, title, subtitle, status, st_color) in layers:
         delivered = "Delivered" in status
 
-        # Main box
+
         box_color = color if delivered else "#bdbdbd"
         text_color = "white" if delivered else "#424242"
         alpha = 1.0 if delivered else 0.55
@@ -57,26 +57,23 @@ def make_four_layers():
                               linewidth=2, alpha=alpha)
         ax.add_patch(rect)
 
-        # Layer tag (L1, L2 ...)
+
         ax.text(0.95, yb + h / 2, tag,
                 ha="center", va="center",
                 fontsize=18, fontweight="bold",
                 color="white" if delivered else "#616161",
                 alpha=alpha)
 
-        # Title
         ax.text(2.0, yb + h * 0.62, title,
                 ha="left", va="center",
                 fontsize=14, fontweight="bold",
                 color=text_color, alpha=alpha)
 
-        # Subtitle
         ax.text(2.0, yb + h * 0.28, subtitle,
                 ha="left", va="center",
                 fontsize=10, color=text_color,
                 alpha=alpha * 0.9)
 
-        # Status badge
         badge_color = st_color if delivered else "#9e9e9e"
         badge_rect = FancyBboxPatch((7.7, yb + h * 0.3), 2.0, h * 0.4,
                                     boxstyle="round,pad=0.05",
@@ -94,7 +91,6 @@ def make_four_layers():
     ax.text(9.75, 4.7, "Increasing\nutility", ha="center", va="center",
             fontsize=9, color="#555", rotation=90)
 
-    # Title
     ax.text(5.0, 9.3, 'What Makes Synthetic Financial Data "Useful"?',
             ha="center", va="center",
             fontsize=16, fontweight="bold", color="#212121")

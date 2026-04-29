@@ -1669,7 +1669,7 @@ def run_cross_model_analysis(
                   encoding="utf-8") as f:
             f.write(nf_analysis)
 
-        # Save metrics as JSON
+
         def _to_serializable(obj):
             if isinstance(obj, (np.integer,)):
                 return int(obj)
@@ -1682,7 +1682,7 @@ def run_cross_model_analysis(
         with open(os.path.join(save_dir, "cross_model_metrics.json"), "w") as f:
             json.dump(model_metrics, f, indent=2, default=_to_serializable)
 
-        # Save temporal coherence as JSON
+
         tc_serializable = {}
         for name, tc in tc_results.items():
             tc_copy = {k: v for k, v in tc.items() if k != "tests"}
@@ -1737,11 +1737,11 @@ if __name__ == "__main__":
     seq_len = windows.shape[1]
     n_samples = args.n_samples
 
-    # Load regime labels if available
+
     regime_path = os.path.join(data_dir, "window_regimes.npy")
     regimes = np.load(regime_path) if os.path.exists(regime_path) else None
 
-    # Load each model and generate
+
     model_synthetics: dict[str, np.ndarray] = {}
     timing: dict[str, float] = {}
 

@@ -51,10 +51,8 @@ def compute_window_pnl(windows: np.ndarray) -> np.ndarray:
 
 
 def var_cvar(returns: np.ndarray, confidence: float = 0.95) -> tuple[float, float]:
-    # VaR is the (1-confidence) quantile negated so it's a positive loss number
     q    = np.quantile(returns, 1.0 - confidence)
     var  = float(-q)
-    # CVaR is the mean of losses that exceed VaR (expected shortfall)
     tail = returns[returns <= q]
     cvar = float(-np.mean(tail)) if len(tail) > 0 else var
     return var, cvar
@@ -69,14 +67,12 @@ def kupiec_lr(real_pnl: np.ndarray, var_syn: float, conf: float) -> dict:
     """Kupiec (1995) LR unconditional coverage test.  LR ~ chi2(1) under H0."""
     from scipy.stats import chi2 as _chi2
     n = len(real_pnl)
-    n_exc = int((-real_pnl > var_syn).sum())   # count of real losses exceeding synthetic VaR
-    p_hat = n_exc / n                           # observed exceedance frequency
-    p_0   = 1.0 - conf                          # expected frequency under correct coverage
+    n_exc = int((-real_pnl > var_syn).sum())
+    p_hat = n_exc / n
+    p_0   = 1.0 - conf
     if n_exc == 0 or n_exc == n:
-        # Edge case: boundary outcomes make log undefined; treat as perfect or worst
         lr_stat, p_value = 0.0, 1.0
     else:
-        # Likelihood ratio statistic comparing observed vs nominal exceedance rates
         lr_stat = 2.0 * (
             n_exc * np.log(p_hat / p_0)
             + (n - n_exc) * np.log((1.0 - p_hat) / (1.0 - p_0))
@@ -85,7 +81,7 @@ def kupiec_lr(real_pnl: np.ndarray, var_syn: float, conf: float) -> dict:
     return {
         "hit_rate":    round(p_hat, 4),
         "nominal":     p_0,
-        "kupiec_pass": p_value > 0.05,  # fail to reject null at 5% = PASS
+        "kupiec_pass": p_value > 0.05,
         "p_value":     round(p_value, 4),
         "lr_stat":     round(lr_stat, 4),
     }
@@ -155,8 +151,8 @@ def load_or_generate(n_paths: int, ckpt_override: str = None) -> np.ndarray:
         n_samples=n_paths,
         use_ddim=True,
         ddim_steps=50,
-        guidance_scale=1.0,   # unconditional for L4 baseline: no regime conditioning
-        ddim_eta=0.0,         # deterministic DDIM sampling (eta=0 gives no stochastic noise)
+        guidance_scale=1.0,
+        ddim_eta=0.0,
     )
     return synthetic
 
@@ -196,8 +192,7 @@ def run_backtest(real_windows: np.ndarray, synthetic_windows: np.ndarray,
             "VaR_synthetic":         round(var_syn,  5),
             "CVaR_real":             round(cvar_real, 5),
             "CVaR_synthetic":        round(cvar_syn,  5),
-            # relative error: how far off is synthetic VaR from real VaR as a fraction
-            "VaR_relative_error_pct": round(abs(var_syn - var_real) / (abs(var_real) + 1e-8) * 100, 2),
+        "VaR_relative_error_pct": round(abs(var_syn - var_real) / (abs(var_real) + 1e-8) * 100, 2),
         }
         results["hit_rates"][key] = kupiec_lr(real_pnl, var_syn, conf)
 
@@ -217,8 +212,6 @@ def run_backtest(real_windows: np.ndarray, synthetic_windows: np.ndarray,
         "syn_mean_pnl":  round(float(np.mean(syn_mom)),  4),
         "real_sharpe":   round(sharpe_ratio(real_mom),   3),
         "syn_sharpe":    round(sharpe_ratio(syn_mom),    3),
-        # rank correlation: sort both by PnL and check if ordering is preserved
-        # close to 1.0 means the model ranks scenarios correctly even if scale is off
         "pnl_rank_corr": round(float(np.corrcoef(
             np.sort(real_mom[:n_min]),
             np.sort(syn_mom[:n_min]))[0, 1]), 3),
