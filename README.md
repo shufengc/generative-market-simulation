@@ -176,7 +176,7 @@ Conditioning sanity: crisis vol (1.26) > normal vol (0.56) > calm vol (0.34). Di
 |--------|------|
 | Shufeng Chen | DDPM Baseline and Improved (v-prediction, Student-t); 7-phase ablation; L3 Conditional DDPM; L4 VaR/CVaR Backtest; Cross-Model Pipeline |
 | Yixuan Ye | TimeGAN; Evaluation Framework (Stylized Facts); Data Pipeline; Phase 7 Decorrelation Regularizer; SF Calibration Study; Presentation Review & Proposal Alignment |
-| Yizheng Lin | VAE (Improved + Original); Data Pipeline; FRED Integration |
+| Yizheng Lin | VAE (Original + Improved); Data Pipeline; FRED Integration; Patch-Based Training Experiments (5 Strides); Model Comparison Testing; Proposal & Slide Modification and Enhancement |
 | Kevin Sun | GARCH Baseline; Visualization Utilities; Demo Interface Testing |
 | Yuxia Meng | Normalizing Flow (RealNVP); Cross-Model Analysis; DDPM Training Enhancements (Min-SNR, warmup LR); Multi-Seed Validation |
 
